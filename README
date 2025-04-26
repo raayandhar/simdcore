@@ -1,0 +1,10 @@
+
+Data width: 128 bits
+Instruction width: 
+ - opcode: 5 bits
+ - addressing mode specifiers: 3 bits
+ - arguments (3):
+   - registers: 8 bits
+   - constants: 8 bits
+
+
