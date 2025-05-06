@@ -1,25 +1,29 @@
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE CPP #-}
 
 module Main where
 
 import Data.Bits
+import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as BB
 import Data.Word
+import Numeric (showHex)
 import System.Environment (getArgs)
 import System.Exit (exitFailure)
 import Text.Parsec
+import Text.Printf (printf)
 
 -- TYPES
 
-newtype Sreg = Sreg Word8 deriving (Show) -- Scalar register
+newtype Sreg = Sreg Word8 -- Scalar register
 
-newtype Vreg = Vreg Word8 deriving (Show) -- Vector register
+newtype Vreg = Vreg Word8 -- Vector register
 
-newtype Imm8 = Imm8 Word8 deriving (Show) -- 8-bit value
+newtype Imm8 = Imm8 Word8 -- 8-bit value
 
-newtype Imm16 = Imm16 Word16 deriving (Show) -- 16-bit value
+newtype Imm16 = Imm16 Word16 -- 16-bit value
 
-newtype Mem = Mem (Sreg, Imm8) deriving (Show) -- memory address (ie. [S1 + imm8])
+newtype Mem = Mem (Sreg, Imm8) -- memory address (ie. [S1 + imm8])
 
 data MOV
   = SCALARMOV_RR Sreg Sreg -- mov s1, s2
@@ -30,7 +34,6 @@ data MOV
   | VECTORMOV_RM Vreg Mem -- mov v1, [s2 + imm8]
   | VECTORMOV_MR Mem Vreg -- mov [s1 + imm8], v2
   | BROADCAST Vreg Sreg Imm8 -- mov v1, s2, imm8 OR mov v1, s2
-  deriving (Show)
 
 data ALU
   = SADD Sreg Sreg Sreg -- add s1, s2, s3
@@ -49,12 +52,66 @@ data ALU
   | VOR Vreg Vreg Vreg -- or v1, v2, v3
   | VXOR Vreg Vreg Vreg -- xor v1, v2, v3
   | VNOT Vreg Vreg -- not v1, v2
-  deriving (Show)
 
 data Instruction
   = MOV MOV
   | ALU ALU
-  deriving (Show)
+
+#ifdef ANSICOLOR
+instance Show Sreg where show (Sreg s) = "\x1b[32ms" ++ show s ++ "\x1b[0m"
+instance Show Vreg where show (Vreg v) = "\x1b[34mv" ++ show v ++ "\x1b[0m"
+instance Show Imm8 where show (Imm8 i) = "\x1b[35m0x" ++ showHex i "" ++ "\x1b[0m"
+instance Show Imm16 where show (Imm16 i) = "\x1b[35m0x" ++ showHex i "" ++ "\x1b[0m"
+#else
+instance Show Sreg where show (Sreg s) = "s" ++ show s
+instance Show Vreg where show (Vreg v) = "v" ++ show v
+instance Show Imm8 where show (Imm8 i) = "0x" ++ showHex i ""
+instance Show Imm16 where show (Imm16 i) = "0x" ++ showHex i ""
+#endif
+
+instance Show Mem where show (Mem (Sreg s, Imm8 i)) = "[" ++ show s ++ " + " ++ show i ++ "]"
+
+instance Show MOV where
+#ifdef ANSICOLOR
+  show m = "\x1b[33mmov\x1b[0m " ++ case m of
+#else
+  show m = "mov " ++ case m of
+#endif
+    SCALARMOV_RR s1 s2 -> show s1 ++ ", " ++ show s2
+    SCALARMOV_RM s1 m -> show s1 ++ ", " ++ show m
+    SCALARMOV_MR m s2 -> show m ++ ", " ++ show s2
+    SCALARMOV_RI s1 i -> show s1 ++ ", " ++ show i
+    VECTORPERM v1 v2 i -> show v1 ++ ", " ++ show v2 ++ ", " ++ show i
+    VECTORMOV_RM v1 m -> show v1 ++ ", " ++ show m
+    VECTORMOV_MR m v2 -> show m ++ ", " ++ show v2
+    BROADCAST v1 s2 i -> show v1 ++ ", " ++ show s2 ++ ", " ++ show i
+
+instance Show ALU where
+#ifdef ANSICOLOR
+  show a = "\x1b[33m" ++ case a of
+#else
+  show a = case a of
+#endif
+    SADD s1 s2 s3 -> "add " ++ show s1 ++ ", " ++ show s2 ++ ", " ++ show s3
+    SMUL s1 s2 s3 -> "mul " ++ show s1 ++ ", " ++ show s2 ++ ", " ++ show s3
+    SNEG s1 s2 -> "neg " ++ show s1 ++ ", " ++ show s2
+    SDIV s1 s2 s3 -> "div " ++ show s1 ++ ", " ++ show s2 ++ ", " ++ show s3
+    SAND s1 s2 s3 -> "and " ++ show s1 ++ ", " ++ show s2 ++ ", " ++ show s3
+    SOR s1 s2 s3 -> "or " ++ show s1 ++ ", " ++ show s2 ++ ", " ++ show s3
+    SXOR s1 s2 s3 -> "xor " ++ show s1 ++ ", " ++ show s2 ++ ", " ++ show s3
+    SNOT s1 s2 -> "not " ++ show s1 ++ ", " ++ show s2
+    VADD v1 v2 v3 -> "add " ++ show v1 ++ ", " ++ show v2 ++ ", " ++ show v3
+    VMUL v1 v2 v3 -> "mul " ++ show v1 ++ ", " ++ show v2 ++ ", " ++ show v3
+    VNEG v1 v2 -> "neg " ++ show v1 ++ ", " ++ show v2
+    VDIV v1 v2 v3 -> "div " ++ show v1 ++ ", " ++ show v2 ++ ", " ++ show v3
+    VAND v1 v2 v3 -> "and " ++ show v1 ++ ", " ++ show v2 ++ ", " ++ show v3
+    VOR v1 v2 v3 -> "or " ++ show v1 ++ ", " ++ show v2 ++ ", " ++ show v3
+    VXOR v1 v2 v3 -> "xor " ++ show v1 ++ ", " ++ show v2 ++ ", " ++ show v3
+    VNOT v1 v2 -> "not " ++ show v1 ++ ", " ++ show v2
+
+instance Show Instruction where
+  show (MOV m) = show m
+  show (ALU a) = show a
 
 -- PARSING
 
@@ -143,16 +200,53 @@ encode (ALU (VOR (Vreg v1) (Vreg v2) (Vreg v3))) = construct 0b00010_101 v1 v2 v
 encode (ALU (VXOR (Vreg v1) (Vreg v2) (Vreg v3))) = construct 0b00010_110 v1 v2 v3
 encode (ALU (VNOT (Vreg v1) (Vreg v2))) = construct 0b00010_111 v1 v2 0
 
+-- DECODING
+
+decode :: Word8 -> Word8 -> Word8 -> Word8 -> Instruction
+decode a b c d = case a of
+  0b00000_000 -> MOV (SCALARMOV_RR (Sreg b) (Sreg c))
+  0b00000_001 -> MOV (SCALARMOV_RM (Sreg b) (Mem (Sreg c, Imm8 d)))
+  0b00000_010 -> MOV (SCALARMOV_MR (Mem (Sreg b, Imm8 c)) (Sreg d))
+  0b00000_011 -> MOV (SCALARMOV_RI (Sreg b) (Imm16 ((fromIntegral c .<<. 8) .|. fromIntegral d)))
+  0b00000_100 -> MOV (VECTORPERM (Vreg b) (Vreg c) (Imm8 d))
+  0b00000_101 -> MOV (VECTORMOV_RM (Vreg b) (Mem (Sreg c, Imm8 d)))
+  0b00000_110 -> MOV (VECTORMOV_MR (Mem (Sreg b, Imm8 c)) (Vreg d))
+  0b00000_111 -> MOV (BROADCAST (Vreg b) (Sreg c) (Imm8 d))
+  0b00001_000 -> ALU (SADD (Sreg b) (Sreg c) (Sreg d))
+  0b00001_001 -> ALU (SMUL (Sreg b) (Sreg c) (Sreg d))
+  0b00001_010 -> ALU (SNEG (Sreg b) (Sreg c))
+  0b00001_011 -> ALU (SDIV (Sreg b) (Sreg c) (Sreg d))
+  0b00001_100 -> ALU (SAND (Sreg b) (Sreg c) (Sreg d))
+  0b00001_101 -> ALU (SOR (Sreg b) (Sreg c) (Sreg d))
+  0b00001_110 -> ALU (SXOR (Sreg b) (Sreg c) (Sreg d))
+  0b00001_111 -> ALU (SNOT (Sreg b) (Sreg c))
+  0b00010_000 -> ALU (VADD (Vreg b) (Vreg c) (Vreg d))
+  0b00010_001 -> ALU (VMUL (Vreg b) (Vreg c) (Vreg d))
+  0b00010_010 -> ALU (VNEG (Vreg b) (Vreg c))
+  0b00010_011 -> ALU (VDIV (Vreg b) (Vreg c) (Vreg d))
+  0b00010_100 -> ALU (VAND (Vreg b) (Vreg c) (Vreg d))
+  0b00010_101 -> ALU (VOR (Vreg b) (Vreg c) (Vreg d))
+  0b00010_110 -> ALU (VXOR (Vreg b) (Vreg c) (Vreg d))
+  0b00010_111 -> ALU (VNOT (Vreg b) (Vreg c))
+  _ -> error "Invalid instruction"
+
 -- MAIN
 
 usage :: IO ()
-usage = putStrLn "usage: as <input file> <output file>" >> exitFailure
+usage = putStrLn "usage: simd as <input file> <output file>\n       simd objdump <input file>" >> exitFailure
 
 main :: IO ()
 main =
   getArgs >>= \case
-    [i, o] ->
+    ["as", i, o] ->
       readFile i >>= \s -> case parse (many1 (instr <* symbol ';')) i s of
         Left err -> print err >> exitFailure
         Right is -> BB.writeFile o (mconcat (map (BB.word32BE . encode) is))
+    ["objdump", i] ->
+      BS.readFile i >>= mapM_ (\(i, (a, b, c, d)) -> printf "%8d:\t%08b %02x %02x %02x\t%s\n" i a b c d (show (decode a b c d))) . zip [0 :: Integer ..] . chunk4 . BS.unpack
+      where
+        chunk4 :: [Word8] -> [(Word8, Word8, Word8, Word8)]
+        chunk4 [] = []
+        chunk4 (a : b : c : d : t) = (a, b, c, d) : chunk4 t
+        chunk4 _ = error "Invalid input file"
     _ -> usage

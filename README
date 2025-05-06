@@ -1,4 +1,4 @@
-assembler: ghc --make as.hs -o as
+assembler: ghc --make as.hs -o simd -optP-DANSICOLOR
 
 Data width: 128 bits
 Instruction width: 
