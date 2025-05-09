@@ -17,51 +17,51 @@ import Text.Printf (printf)
 
 -- TYPES
 
-newtype Sreg = Sreg Word8 -- Scalar register
+newtype Sreg = Sreg Word8 -- ^Scalar register
 
-newtype Vreg = Vreg Word8 -- Vector register
+newtype Vreg = Vreg Word8 -- ^Vector register
 
-newtype Imm8 = Imm8 Word8 -- 8-bit value
+newtype Imm8 = Imm8 Word8 -- ^8-bit value
 
-newtype Imm16 = Imm16 Word16 -- 16-bit value
+newtype Imm16 = Imm16 Word16 -- ^16-bit value
 
-newtype Mem = Mem (Sreg, Imm8) -- memory address (ie. [S1 + imm8])
+newtype Mem = Mem (Sreg, Imm8) -- ^memory address (ie. [S1 + imm8])
 
 data Lane = Lane0 | Lane1 | Lane2 | Lane3 | Lang4 | Lane5 | Lane6 | Lane7 deriving Enum
 
 data MOV
-  = SCALARMOV_RR Sreg Sreg -- mov s1, s2
-  | SCALARMOV_RM Sreg Mem -- mov s1, [s2 + imm8]
-  | SCALARMOV_MR Mem Sreg -- mov [s1 + imm8], s2
-  | SCALARMOV_RI Sreg Imm16 -- mov s1, imm8
-  | VECTORMOV_RR Vreg Vreg -- mov v1, v2
-  | VECTORMOV_RM Vreg Mem -- mov v1, [s2 + imm8]
-  | VECTORMOV_MR Mem Vreg -- mov [s1 + imm8], v2
-  | BROADCAST Vreg Sreg Imm8 -- mov v1, s2, imm8 OR mov v1, s2
+  = SCALARMOV_RR Sreg Sreg -- ^mov s1, s2
+  | SCALARMOV_RM Sreg Mem -- ^mov s1, [s2 + imm8]
+  | SCALARMOV_MR Mem Sreg -- ^mov [s1 + imm8], s2
+  | SCALARMOV_RI Sreg Imm16 -- ^mov s1, imm8
+  | VECTORMOV_RR Vreg Vreg -- ^mov v1, v2
+  | VECTORMOV_RM Vreg Mem -- ^mov v1, [s2 + imm8]
+  | VECTORMOV_MR Mem Vreg -- ^mov [s1 + imm8], v2
+  | BROADCAST Vreg Sreg Imm8 -- ^mov v1, s2, imm8 OR mov v1, s2
 
 data ALU
-  = SADD Sreg Sreg Sreg -- add s1, s2, s3
-  | SMUL Sreg Sreg Sreg -- mul s1, s2, s3
-  | SNEG Sreg Sreg -- neg s1, s2
-  | SDIV Sreg Sreg Sreg -- div s1, s2, s3
-  | SAND Sreg Sreg Sreg -- and s1, s2, s3
-  | SOR Sreg Sreg Sreg -- or s1, s2, s3
-  | SXOR Sreg Sreg Sreg -- xor s1, s2, s3
-  | SNOT Sreg Sreg -- not s1, s2
-  | VADD Vreg Vreg Vreg -- add v1, v2, v3
-  | VMUL Vreg Vreg Vreg -- mul v1, v2, v3
-  | VNEG Vreg Vreg -- neg v1, v2
-  | VDIV Vreg Vreg Vreg -- div v1, v2, v3
-  | VAND Vreg Vreg Vreg -- and v1, v2, v3
-  | VOR Vreg Vreg Vreg -- or v1, v2, v3
-  | VXOR Vreg Vreg Vreg -- xor v1, v2, v3
-  | VNOT Vreg Vreg -- not v1, v2
+  = SADD Sreg Sreg Sreg -- ^add s1, s2, s3
+  | SMUL Sreg Sreg Sreg -- ^mul s1, s2, s3
+  | SNEG Sreg Sreg -- ^neg s1, s2
+  | SDIV Sreg Sreg Sreg -- ^div s1, s2, s3
+  | SAND Sreg Sreg Sreg -- ^and s1, s2, s3
+  | SOR Sreg Sreg Sreg -- ^or s1, s2, s3
+  | SXOR Sreg Sreg Sreg -- ^xor s1, s2, s3
+  | SNOT Sreg Sreg -- ^not s1, s2
+  | VADD Vreg Vreg Vreg -- ^add v1, v2, v3
+  | VMUL Vreg Vreg Vreg -- ^mul v1, v2, v3
+  | VNEG Vreg Vreg -- ^neg v1, v2
+  | VDIV Vreg Vreg Vreg -- ^div v1, v2, v3
+  | VAND Vreg Vreg Vreg -- ^and v1, v2, v3
+  | VOR Vreg Vreg Vreg -- ^or v1, v2, v3
+  | VXOR Vreg Vreg Vreg -- ^xor v1, v2, v3
+  | VNOT Vreg Vreg -- ^not v1, v2
 
 data PERM
-  = SCATTER [Lane] -- scatter l1, l2, l3, l4, l5, l6, l7, l8
-  | GATHER [Lane] -- gather l1, l2, l3, l4, l5, l6, l7, l8
-  | LOAD Vreg -- mov vperm, v1
-  | STORE Vreg -- mov v1, vperm
+  = SCATTER [Lane] -- ^scatter l1, l2, l3, l4, l5, l6, l7, l8
+  | GATHER [Lane] -- ^gather l1, l2, l3, l4, l5, l6, l7, l8
+  | LOAD Vreg -- ^mov vperm, v1
+  | STORE Vreg -- ^mov v1, vperm
 
 data Instruction
   = MOV MOV
