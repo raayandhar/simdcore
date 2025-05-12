@@ -7,8 +7,10 @@ import Data.Bifunctor (first)
 import Data.Bits
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as BB
-import Data.Char (digitToInt)
+import Data.Char (digitToInt, isSpace)
 import Data.List (find, intercalate, isPrefixOf)
+import Data.Map.Strict (Map)
+import qualified Data.Map.Strict as Map
 import Data.Text (replace)
 import Data.Word
 import Numeric (showHex)
@@ -282,7 +284,7 @@ test = test' <|> (string "set" *> spaces *> (SET <$> imm8))
          )
 
 instr :: Parsec String () Instruction
-instr = try (MOV <$> mov) <|> try (ALU <$> alu) <|> try (PERM <$> perm) <|> try (JUMP <$> jump)
+instr = try (MOV <$> mov) <|> try (ALU <$> alu) <|> try (PERM <$> perm) <|> try (JUMP <$> jump) <|> TEST <$> test
 
 -- ENCODING
 
@@ -384,6 +386,24 @@ decode a b c d = case a of
     pack2 x y = fromIntegral x .<<. 8 .|. fromIntegral y
     pack3 x y z = fromIntegral x .<<. 16 .|. fromIntegral y .<<. 8 .|. fromIntegral z
 
+-- PREPROCESSING
+
+getLabels :: [String] -> (Map String Int, [String])
+getLabels l = get (foldl go (Map.empty, [], 0) l)
+  where
+    go (m, acc, count) l
+      | null s = (m, "":acc, count)
+      | ':' `elem` s = (Map.insert name count m, "":acc, count)
+      | otherwise = (m, (s ++ ";"):acc, count + 1)
+        where
+          s = takeWhile (/= ';') $ dropWhile isSpace l
+          name = takeWhile (/= ':') s
+    get (a,b,c) = (a, reverse b)
+
+resolveLabel :: Map String Int -> String -> String
+resolveLabel m line = replaceAll (Map.map show m) line
+  where replaceAll m line = unwords $ map (\tok -> Map.findWithDefault tok tok m) (words line)
+
 -- MAIN
 
 usage :: IO ()
@@ -393,11 +413,14 @@ main :: IO ()
 main =
   getArgs >>= \case
     ["as", i, o] ->
-      readFile i >>= \s -> case parse (many1 (instr <* symbol ';') <* eof) i s of
-        Left err -> print err >> exitFailure
-        Right is -> BB.writeFile o (mconcat (map (BB.word32BE . encode) is))
+      readFile i >>= \s ->
+        let (labels, ls) = getLabels (lines s)
+            s' = unlines (map (resolveLabel labels) ls)
+        in case parse (many1 (instr <* symbol ';') <* eof) i s' of
+          Left err -> print err >> exitFailure
+          Right is -> BB.writeFile o (mconcat (map (BB.word32BE . encode) is))
     ["objdump", i] ->
-      BS.readFile i >>= mapM_ (\(i, (a, b, c, d)) -> printf "%8d:\t%08b %02x %02x %02x\t%s\n" i a b c d (show (decode a b c d))) . zip [0 :: Integer ..] . chunk4 . BS.unpack
+      BS.readFile i >>= mapM_ (\(i, (a, b, c, d)) -> printf "%8x:\t%08b %02x %02x %02x\t%s\n" i a b c d (show (decode a b c d))) . zip [0 :: Integer ..] . chunk4 . BS.unpack
       where
         chunk4 :: [Word8] -> [(Word8, Word8, Word8, Word8)]
         chunk4 [] = []
