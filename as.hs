@@ -3,11 +3,13 @@
 
 module Main where
 
+import Data.Bifunctor (first)
 import Data.Bits
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Builder as BB
 import Data.Char (digitToInt)
-import Data.List (intercalate)
+import Data.List (find, intercalate, isPrefixOf)
+import Data.Text (replace)
 import Data.Word
 import Numeric (showHex)
 import System.Environment (getArgs)
@@ -33,7 +35,7 @@ data MOV
   = SCALARMOV_RR Sreg Sreg -- ^mov s1, s2
   | SCALARMOV_RM Sreg Mem -- ^mov s1, [s2 + imm8]
   | SCALARMOV_MR Mem Sreg -- ^mov [s1 + imm8], s2
-  | SCALARMOV_RI Sreg Imm16 -- ^mov s1, imm8
+  | SCALARMOV_RI Sreg Imm16 -- ^mov s1, imm16
   | VECTORMOV_RR Vreg Vreg -- ^mov v1, v2
   | VECTORMOV_RM Vreg Mem -- ^mov v1, [s2 + imm8]
   | VECTORMOV_MR Mem Vreg -- ^mov [s1 + imm8], v2
@@ -63,10 +65,27 @@ data PERM
   | LOAD Vreg -- ^mov vperm, v1
   | STORE Vreg -- ^mov v1, vperm
 
+data JUMP
+  = J Imm16 -- ^jump
+  | JE Imm16 -- ^jump if equal
+  | JNE Imm16 -- ^jump if not equal
+  | JGE Imm16 -- ^jump if greater or equal
+  | JLE Imm16 -- ^jump if less or equal
+  | JGT Imm16 -- ^jump if greater
+  | JLT Imm16 -- ^jump if less
+
+data TEST
+  = TEST_RR Sreg Sreg -- ^test s1, s2
+  | TEST_RI Sreg Imm16 -- ^test s1, imm16
+  | TEST_IR Imm16 Sreg -- ^test imm16, s1
+  | SET Imm8 -- ^set imm8 (sets flags)
+
 data Instruction
   = MOV MOV
   | ALU ALU
   | PERM PERM
+  | JUMP JUMP
+  | TEST TEST
 
 #ifdef ANSICOLOR
 instance Show Sreg where show (Sreg s) = "\x1b[32ms" ++ show s ++ "\x1b[0m"
@@ -138,10 +157,37 @@ instance Show PERM where
     STORE v -> "mov " ++ show v ++ ", vperm"
 #endif
 
+instance Show JUMP where
+#ifdef ANSICOLOR
+  show j = "\x1b[33m" ++ case j of
+#else
+  show j = case j of
+#endif
+    J i -> "j " ++ show i
+    JE i -> "je " ++ show i
+    JNE i -> "jne " ++ show i
+    JGE i -> "jge " ++ show i
+    JLE i -> "jle " ++ show i
+    JGT i -> "jgt " ++ show i
+    JLT i -> "jlt " ++ show i
+
+instance Show TEST where
+#ifdef ANSICOLOR
+  show t = "\x1b[33m" ++ case t of
+#else
+  show t = case t of
+#endif
+    TEST_RR s1 s2 -> "test " ++ show s1 ++ ", " ++ show s2
+    TEST_RI s1 i -> "test " ++ show s1 ++ ", " ++ show i
+    TEST_IR i s1 -> "test " ++ show i ++ ", " ++ show s1
+    SET i -> "set " ++ show i
+
 instance Show Instruction where
   show (MOV m) = show m
   show (ALU a) = show a
   show (PERM p) = show p
+  show (JUMP j) = show j
+  show (TEST t) = show t
 
 -- PARSING
 
@@ -212,8 +258,31 @@ perm = choice (map try (init opts) ++ [last opts])
         string "mov" *> spaces *> (try (LOAD <$> (string "vperm" *> symbol ',' *> vreg)) <|> (STORE <$> (vreg <* symbol ',' <* string "vperm")))
       ]
 
+jump :: Parsec String () JUMP
+jump = choice (map try (init opts) ++ [last opts])
+  where
+    opts =
+      [ string "je" *> spaces *> (JE <$> imm16),
+        string "jne" *> spaces *> (JNE <$> imm16),
+        string "jge" *> spaces *> (JGE <$> imm16),
+        string "jle" *> spaces *> (JLE <$> imm16),
+        string "jgt" *> spaces *> (JGT <$> imm16),
+        string "jlt" *> spaces *> (JLT <$> imm16),
+        string "j" *> spaces *> (J <$> imm16)
+      ]
+
+test :: Parsec String () TEST
+test = test' <|> (string "set" *> spaces *> (SET <$> imm8))
+  where
+    test' = string "test"
+      *> spaces
+      *> ( try (TEST_RR <$> sreg <* symbol ',' <*> sreg)
+             <|> try (TEST_RI <$> sreg <* symbol ',' <*> imm16)
+             <|> try (TEST_IR <$> imm16 <* symbol ',' <*> sreg)
+         )
+
 instr :: Parsec String () Instruction
-instr = try (MOV <$> mov) <|> try (ALU <$> alu) <|> PERM <$> perm
+instr = try (MOV <$> mov) <|> try (ALU <$> alu) <|> try (PERM <$> perm) <|> try (JUMP <$> jump)
 
 -- ENCODING
 
@@ -252,6 +321,17 @@ encode (PERM (SCATTER ls)) = 0b00011_000 .<<. 24 .|. packLanes ls
 encode (PERM (GATHER ls)) = 0b00011_001 .<<. 24 .|. packLanes ls
 encode (PERM (LOAD (Vreg v))) = construct 0b00011_010 v 0 0
 encode (PERM (STORE (Vreg v))) = construct 0b00011_011 v 0 0
+encode (JUMP (J (Imm16 i))) = construct 0b00100_000 (fromIntegral i .>>. 8) (fromIntegral i) 0
+encode (JUMP (JE (Imm16 i))) = construct 0b00100_001 (fromIntegral i .>>. 8) (fromIntegral i) 0
+encode (JUMP (JNE (Imm16 i))) = construct 0b00100_010 (fromIntegral i .>>. 8) (fromIntegral i) 0
+encode (JUMP (JGE (Imm16 i))) = construct 0b00100_011 (fromIntegral i .>>. 8) (fromIntegral i) 0
+encode (JUMP (JLE (Imm16 i))) = construct 0b00100_100 (fromIntegral i .>>. 8) (fromIntegral i) 0
+encode (JUMP (JGT (Imm16 i))) = construct 0b00100_101 (fromIntegral i .>>. 8) (fromIntegral i) 0
+encode (JUMP (JLT (Imm16 i))) = construct 0b00100_110 (fromIntegral i .>>. 8) (fromIntegral i) 0
+encode (TEST (TEST_RR (Sreg s1) (Sreg s2))) = construct 0b00101_000 s1 s2 0
+encode (TEST (TEST_RI (Sreg s1) (Imm16 i))) = construct 0b00101_001 s1 (fromIntegral i .>>. 8) (fromIntegral i)
+encode (TEST (TEST_IR (Imm16 i) (Sreg s1))) = construct 0b00101_010 (fromIntegral i .>>. 8) (fromIntegral i) s1
+encode (TEST (SET (Imm8 i))) = construct 0b00101_011 i 0 0
 
 -- DECODING
 
@@ -288,6 +368,17 @@ decode a b c d = case a of
   0b00011_001 -> PERM (GATHER (unpackLanes (pack3 b c d)))
   0b00011_010 -> PERM (LOAD (Vreg b))
   0b00011_011 -> PERM (STORE (Vreg b))
+  0b00100_000 -> JUMP (J (Imm16 (pack2 b c)))
+  0b00100_001 -> JUMP (JE (Imm16 (pack2 b c)))
+  0b00100_010 -> JUMP (JNE (Imm16 (pack2 b c)))
+  0b00100_011 -> JUMP (JGE (Imm16 (pack2 b c)))
+  0b00100_100 -> JUMP (JLE (Imm16 (pack2 b c)))
+  0b00100_101 -> JUMP (JGT (Imm16 (pack2 b c)))
+  0b00100_110 -> JUMP (JLT (Imm16 (pack2 b c)))
+  0b00101_000 -> TEST (TEST_RR (Sreg b) (Sreg c))
+  0b00101_001 -> TEST (TEST_RI (Sreg b) (Imm16 (pack2 c d)))
+  0b00101_010 -> TEST (TEST_IR (Imm16 (pack2 b c)) (Sreg d))
+  0b00101_011 -> TEST (SET (Imm8 b))
   _ -> error "Invalid instruction"
   where
     pack2 x y = fromIntegral x .<<. 8 .|. fromIntegral y
@@ -302,7 +393,7 @@ main :: IO ()
 main =
   getArgs >>= \case
     ["as", i, o] ->
-      readFile i >>= \s -> case parse (many1 (instr <* symbol ';')) i s of
+      readFile i >>= \s -> case parse (many1 (instr <* symbol ';') <* eof) i s of
         Left err -> print err >> exitFailure
         Right is -> BB.writeFile o (mconcat (map (BB.word32BE . encode) is))
     ["objdump", i] ->
