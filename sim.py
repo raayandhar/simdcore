@@ -28,7 +28,7 @@ if __name__ == "__main__":
   vregs = [bytearray(16) for _ in range(256)]
   flags = 0
 
-  for _ in range(100):
+  for _ in range(256):
   # for (opcode, arg1, arg2, arg3) in [struct.unpack("BBBB", b) for b in [data[i:i+4] for i in range(0, len(data), 4)]]:
   # PC * 4 : PC * 4 + 4
     opcode, arg1, arg2, arg3 = struct.unpack("BBBB", data[pc * 4:(pc * 4) + 4])
