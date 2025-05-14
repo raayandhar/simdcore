@@ -24,7 +24,7 @@ if __name__ == "__main__":
   vregs = [bytearray(16) for _ in range(256)]
   flags = 0
 
-  while True:
+  for _ in range(256):
   # for (opcode, arg1, arg2, arg3) in [struct.unpack("BBBB", b) for b in [data[i:i+4] for i in range(0, len(data), 4)]]:
   # PC * 4 : PC * 4 + 4
     opcode, arg1, arg2, arg3 = struct.unpack("BBBB", data[pc * 4:(pc * 4) + 4])
@@ -59,6 +59,8 @@ if __name__ == "__main__":
       case "00010", "101": vregs[arg1] = apply_func(np.bitwise_or, vregs[arg2], vregs[arg3])
       case "00010", "110": vregs[arg1] = apply_func(np.bitwise_xor, vregs[arg2], vregs[arg3])
       case "00010", "111": vregs[arg1] = apply_func(np.bitwise_not, vregs[arg2])
+      case "00011", "000": vregs[arg1] = apply_func(np.equal, vregs[arg2], vregs[arg3])
+      case "00011", "001": vregs[arg1] = apply_func(np.greater, vregs[arg2], vregs[arg3])
       case "00100", "000": # J (unconditional)
         pc = pack2(arg1, arg2)
         continue
@@ -86,7 +88,6 @@ if __name__ == "__main__":
       case "00101", "011": flags = arg1 & (SF | ZF)
     pc += 1
 
-    if pc >= 0xf: break
   print("Sregs:")
   for i in range(5):
     print(f"s{i:2}: {sregs[i]:4}")
