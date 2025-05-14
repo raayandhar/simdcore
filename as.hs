@@ -60,6 +60,8 @@ data ALU
   | VOR Vreg Vreg Vreg -- ^or v1, v2, v3
   | VXOR Vreg Vreg Vreg -- ^xor v1, v2, v3
   | VNOT Vreg Vreg -- ^not v1, v2
+  | VEQ Vreg Vreg Vreg -- ^veq v1, v2, v3
+  | VGT Vreg Vreg Vreg -- ^vgt v1, v2, v3
 
 data PERM
   = SCATTER [Lane] -- ^scatter l1, l2, l3, l4, l5, l6, l7, l8
@@ -69,7 +71,7 @@ data PERM
 
 data JUMP
   = J Imm16 -- ^jump
-  | JE Imm16 -- ^jump if equal
+  | JEQ Imm16 -- ^jump if equal
   | JNE Imm16 -- ^jump if not equal
   | JGE Imm16 -- ^jump if greater or equal
   | JLE Imm16 -- ^jump if less or equal
@@ -142,6 +144,8 @@ instance Show ALU where
     VOR v1 v2 v3 -> "or " ++ show v1 ++ ", " ++ show v2 ++ ", " ++ show v3
     VXOR v1 v2 v3 -> "xor " ++ show v1 ++ ", " ++ show v2 ++ ", " ++ show v3
     VNOT v1 v2 -> "not " ++ show v1 ++ ", " ++ show v2
+    VEQ v1 v2 v3 -> "veq " ++ show v1 ++ ", " ++ show v2 ++ ", " ++ show v3
+    VGT v1 v2 v3 -> "vgt " ++ show v1 ++ ", " ++ show v2 ++ ", " ++ show v3
 
 instance Show PERM where
 #ifdef ANSICOLOR
@@ -166,7 +170,7 @@ instance Show JUMP where
   show j = case j of
 #endif
     J i -> "j " ++ show i
-    JE i -> "je " ++ show i
+    JEQ i -> "jeq " ++ show i
     JNE i -> "jne " ++ show i
     JGE i -> "jge " ++ show i
     JLE i -> "jle " ++ show i
@@ -246,7 +250,9 @@ alu = choice (map try (init ops) ++ [last ops])
         string "and" *> spaces *> (try (instr3 sreg SAND) <|> instr3 vreg VAND),
         string "or"  *> spaces *> (try (instr3 sreg SOR)  <|> instr3 vreg VOR),
         string "xor" *> spaces *> (try (instr3 sreg SXOR) <|> instr3 vreg VXOR),
-        string "not" *> spaces *> (try (instr2 sreg SNOT) <|> instr2 vreg VNOT)
+        string "not" *> spaces *> (try (instr2 sreg SNOT) <|> instr2 vreg VNOT),
+        string "veq" *> spaces *> (instr3 vreg VEQ),
+        string "vgt" *> spaces *> (instr3 vreg VGT)
       ]
     instr2 p c = c <$> p <* symbol ',' <*> p
     instr3 p c = c <$> p <* symbol ',' <*> p <* symbol ',' <*> p
@@ -264,7 +270,7 @@ jump :: Parsec String () JUMP
 jump = choice (map try (init opts) ++ [last opts])
   where
     opts =
-      [ string "je" *> spaces *> (JE <$> imm16),
+      [ string "jeq" *> spaces *> (JEQ <$> imm16),
         string "jne" *> spaces *> (JNE <$> imm16),
         string "jge" *> spaces *> (JGE <$> imm16),
         string "jle" *> spaces *> (JLE <$> imm16),
@@ -319,12 +325,14 @@ encode (ALU (VAND (Vreg v1) (Vreg v2) (Vreg v3))) = construct 0b00010_100 v1 v2 
 encode (ALU (VOR (Vreg v1) (Vreg v2) (Vreg v3))) = construct 0b00010_101 v1 v2 v3
 encode (ALU (VXOR (Vreg v1) (Vreg v2) (Vreg v3))) = construct 0b00010_110 v1 v2 v3
 encode (ALU (VNOT (Vreg v1) (Vreg v2))) = construct 0b00010_111 v1 v2 0
-encode (PERM (SCATTER ls)) = 0b00011_000 .<<. 24 .|. packLanes ls
-encode (PERM (GATHER ls)) = 0b00011_001 .<<. 24 .|. packLanes ls
-encode (PERM (LOAD (Vreg v))) = construct 0b00011_010 v 0 0
-encode (PERM (STORE (Vreg v))) = construct 0b00011_011 v 0 0
+encode (ALU (VEQ (Vreg v1) (Vreg v2) (Vreg v3))) = construct 0b00011_000 v1 v2 v3
+encode (ALU (VGT (Vreg v1) (Vreg v2) (Vreg v3))) = construct 0b00011_001 v1 v2 v3
+encode (PERM (SCATTER ls)) = 0b00011_010 .<<. 24 .|. packLanes ls
+encode (PERM (GATHER ls)) = 0b00011_011 .<<. 24 .|. packLanes ls
+encode (PERM (LOAD (Vreg v))) = construct 0b00011_100 v 0 0
+encode (PERM (STORE (Vreg v))) = construct 0b00011_101 v 0 0
 encode (JUMP (J (Imm16 i))) = construct 0b00100_000 (fromIntegral i .>>. 8) (fromIntegral i) 0
-encode (JUMP (JE (Imm16 i))) = construct 0b00100_001 (fromIntegral i .>>. 8) (fromIntegral i) 0
+encode (JUMP (JEQ (Imm16 i))) = construct 0b00100_001 (fromIntegral i .>>. 8) (fromIntegral i) 0
 encode (JUMP (JNE (Imm16 i))) = construct 0b00100_010 (fromIntegral i .>>. 8) (fromIntegral i) 0
 encode (JUMP (JGE (Imm16 i))) = construct 0b00100_011 (fromIntegral i .>>. 8) (fromIntegral i) 0
 encode (JUMP (JLE (Imm16 i))) = construct 0b00100_100 (fromIntegral i .>>. 8) (fromIntegral i) 0
@@ -366,12 +374,14 @@ decode a b c d = case a of
   0b00010_101 -> ALU (VOR (Vreg b) (Vreg c) (Vreg d))
   0b00010_110 -> ALU (VXOR (Vreg b) (Vreg c) (Vreg d))
   0b00010_111 -> ALU (VNOT (Vreg b) (Vreg c))
-  0b00011_000 -> PERM (SCATTER (unpackLanes (pack3 b c d)))
-  0b00011_001 -> PERM (GATHER (unpackLanes (pack3 b c d)))
-  0b00011_010 -> PERM (LOAD (Vreg b))
-  0b00011_011 -> PERM (STORE (Vreg b))
+  0b00011_000 -> ALU (VEQ (Vreg b) (Vreg c) (Vreg d))
+  0b00011_001 -> ALU (VGT (Vreg b) (Vreg c) (Vreg d))
+  0b00011_010 -> PERM (SCATTER (unpackLanes (pack3 b c d)))
+  0b00011_011 -> PERM (GATHER (unpackLanes (pack3 b c d)))
+  0b00011_100 -> PERM (LOAD (Vreg b))
+  0b00011_101 -> PERM (STORE (Vreg b))
   0b00100_000 -> JUMP (J (Imm16 (pack2 b c)))
-  0b00100_001 -> JUMP (JE (Imm16 (pack2 b c)))
+  0b00100_001 -> JUMP (JEQ (Imm16 (pack2 b c)))
   0b00100_010 -> JUMP (JNE (Imm16 (pack2 b c)))
   0b00100_011 -> JUMP (JGE (Imm16 (pack2 b c)))
   0b00100_100 -> JUMP (JLE (Imm16 (pack2 b c)))
