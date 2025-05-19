@@ -105,7 +105,7 @@ instance Show Imm16 where show (Imm16 i) = "0x" ++ showHex i ""
 instance Show Lane where show = show . fromEnum
 #endif
 
-instance Show Mem where show (Mem (Sreg s, Imm8 i)) = "[" ++ show s ++ " + " ++ show i ++ "]"
+instance Show Mem where show (Mem (s, Imm8 i)) = "[" ++ show s ++ " + " ++ show i ++ "]"
 
 instance Show MOV where
 #ifdef ANSICOLOR
