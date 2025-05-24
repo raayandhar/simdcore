@@ -92,6 +92,9 @@ if __name__ == "__main__":
         if flags & SF: 
           pc = pack2(arg1, arg2)
           continue
+      case "00100", "111": # JR
+        pc = sregs[arg1]
+        continue
       case "00101", "000": flags = get_flags(sregs[arg1] - sregs[arg2])
       case "00101", "001": flags = get_flags(sregs[arg1] - pack2(arg2, arg3))
       case "00101", "010": flags = get_flags(pack2(arg1, arg2) - sregs[arg3])

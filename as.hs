@@ -77,6 +77,7 @@ data JUMP
   | JLE Imm16 -- ^jump if less or equal
   | JGT Imm16 -- ^jump if greater
   | JLT Imm16 -- ^jump if less
+  | JR Sreg -- ^jump to scalar register
 
 data TEST
   = TEST_RR Sreg Sreg -- ^test s1, s2
@@ -176,6 +177,7 @@ instance Show JUMP where
     JLE i -> "jle " ++ show i
     JGT i -> "jgt " ++ show i
     JLT i -> "jlt " ++ show i
+    JR s -> "jr " ++ show s
 
 instance Show TEST where
 #ifdef ANSICOLOR
@@ -276,6 +278,7 @@ jump = choice (map try (init opts) ++ [last opts])
         string "jle" *> spaces *> (JLE <$> imm16),
         string "jgt" *> spaces *> (JGT <$> imm16),
         string "jlt" *> spaces *> (JLT <$> imm16),
+        string "jr" *> spaces *> (JR <$> sreg),
         string "j" *> spaces *> (J <$> imm16)
       ]
 
@@ -338,6 +341,7 @@ encode (JUMP (JGE (Imm16 i))) = construct 0b00100_011 (fromIntegral i .>>. 8) (f
 encode (JUMP (JLE (Imm16 i))) = construct 0b00100_100 (fromIntegral i .>>. 8) (fromIntegral i) 0
 encode (JUMP (JGT (Imm16 i))) = construct 0b00100_101 (fromIntegral i .>>. 8) (fromIntegral i) 0
 encode (JUMP (JLT (Imm16 i))) = construct 0b00100_110 (fromIntegral i .>>. 8) (fromIntegral i) 0
+encode (JUMP (JR (Sreg s))) = construct 0b00100_111 s 0 0
 encode (TEST (TEST_RR (Sreg s1) (Sreg s2))) = construct 0b00101_000 s1 s2 0
 encode (TEST (TEST_RI (Sreg s1) (Imm16 i))) = construct 0b00101_001 s1 (fromIntegral i .>>. 8) (fromIntegral i)
 encode (TEST (TEST_IR (Imm16 i) (Sreg s1))) = construct 0b00101_010 (fromIntegral i .>>. 8) (fromIntegral i) s1
@@ -387,6 +391,7 @@ decode a b c d = case a of
   0b00100_100 -> JUMP (JLE (Imm16 (pack2 b c)))
   0b00100_101 -> JUMP (JGT (Imm16 (pack2 b c)))
   0b00100_110 -> JUMP (JLT (Imm16 (pack2 b c)))
+  0b00100_111 -> JUMP (JR (Sreg b))
   0b00101_000 -> TEST (TEST_RR (Sreg b) (Sreg c))
   0b00101_001 -> TEST (TEST_RI (Sreg b) (Imm16 (pack2 c d)))
   0b00101_010 -> TEST (TEST_IR (Imm16 (pack2 b c)) (Sreg d))
