@@ -85,12 +85,19 @@ data TEST
   | TEST_IR Imm16 Sreg -- ^test imm16, s1
   | SET Imm8 -- ^set imm8 (sets flags)
 
+data INOUT
+  = INL Sreg -- ^ inl s1; read byte from serial into lower half of s1
+  | INH Sreg -- ^ inh s1; read byte from serial into higher half of s1
+  | OUTL Sreg -- ^ outl s1; write lower half of s1 to serial
+  | OUTH Sreg -- ^ outh s1; write higher half of s1 to serial
+
 data Instruction
   = MOV MOV
   | ALU ALU
   | PERM PERM
   | JUMP JUMP
   | TEST TEST
+  | INOUT INOUT
 
 #ifdef ANSICOLOR
 instance Show Sreg where show (Sreg s) = "\x1b[32ms" ++ show s ++ "\x1b[0m"
@@ -190,12 +197,24 @@ instance Show TEST where
     TEST_IR i s1 -> "test " ++ show i ++ ", " ++ show s1
     SET i -> "set " ++ show i
 
+instance Show INOUT where
+#ifdef ANSICOLOR
+  show i = "\x1b[33m" ++ case i of
+#else
+  show i = case i of
+#endif
+    INL s -> "inl " ++ show s
+    INH s -> "inh " ++ show s
+    OUTL s -> "outl " ++ show s
+    OUTH s -> "outh " ++ show s
+
 instance Show Instruction where
   show (MOV m) = show m
   show (ALU a) = show a
   show (PERM p) = show p
   show (JUMP j) = show j
   show (TEST t) = show t
+  show (INOUT i) = show i
 
 -- PARSING
 
@@ -292,8 +311,18 @@ test = test' <|> (string "set" *> spaces *> (SET <$> imm8))
              <|> try (TEST_IR <$> imm16 <* symbol ',' <*> sreg)
          )
 
+inout :: Parsec String () INOUT
+inout = choice (map try (init opts) ++ [last opts])
+  where
+    opts =
+      [ string "inl" *> spaces *> (INL <$> sreg),
+        string "inh" *> spaces *> (INH <$> sreg),
+        string "outl" *> spaces *> (OUTL <$> sreg),
+        string "outh" *> spaces *> (OUTH <$> sreg)
+      ]
+
 instr :: Parsec String () Instruction
-instr = try (MOV <$> mov) <|> try (ALU <$> alu) <|> try (PERM <$> perm) <|> try (JUMP <$> jump) <|> TEST <$> test
+instr = try (MOV <$> mov) <|> try (ALU <$> alu) <|> try (PERM <$> perm) <|> try (JUMP <$> jump) <|> try (TEST <$> test) <|> try (INOUT <$> inout)
 
 -- ENCODING
 
@@ -307,7 +336,7 @@ encode :: Instruction -> Word32
 encode (MOV (SCALARMOV_RR (Sreg s1) (Sreg s2))) = construct 0b00000_000 s1 s2 0
 encode (MOV (SCALARMOV_RM (Sreg s1) (Mem (Sreg s2, Imm8 i)))) = construct 0b00000_001 s1 s2 i
 encode (MOV (SCALARMOV_MR (Mem (Sreg s1, Imm8 i)) (Sreg s2))) = construct 0b00000_010 s1 i s2
-encode (MOV (SCALARMOV_RI (Sreg s1) (Imm16 i))) = construct 0b00000_011 s1 (fromIntegral i .>>. 8) (fromIntegral i)
+encode (MOV (SCALARMOV_RI (Sreg s1) (Imm16 i))) = construct 0b00000_011 s1 (fromIntegral (i .>>. 8)) (fromIntegral i)
 encode (MOV (VECTORMOV_RR (Vreg v1) (Vreg v2))) = construct 0b00000_100 v1 v2 0
 encode (MOV (VECTORMOV_RM (Vreg v1) (Mem (Sreg s2, Imm8 i)))) = construct 0b00000_101 v1 s2 i
 encode (MOV (VECTORMOV_MR (Mem (Sreg s1, Imm8 i)) (Vreg v2))) = construct 0b00000_110 s1 i v2
@@ -334,18 +363,22 @@ encode (PERM (SCATTER ls)) = 0b00011_010 .<<. 24 .|. packLanes ls
 encode (PERM (GATHER ls)) = 0b00011_011 .<<. 24 .|. packLanes ls
 encode (PERM (LOAD (Vreg v))) = construct 0b00011_100 v 0 0
 encode (PERM (STORE (Vreg v))) = construct 0b00011_101 v 0 0
-encode (JUMP (J (Imm16 i))) = construct 0b00100_000 (fromIntegral i .>>. 8) (fromIntegral i) 0
-encode (JUMP (JEQ (Imm16 i))) = construct 0b00100_001 (fromIntegral i .>>. 8) (fromIntegral i) 0
-encode (JUMP (JNE (Imm16 i))) = construct 0b00100_010 (fromIntegral i .>>. 8) (fromIntegral i) 0
-encode (JUMP (JGE (Imm16 i))) = construct 0b00100_011 (fromIntegral i .>>. 8) (fromIntegral i) 0
-encode (JUMP (JLE (Imm16 i))) = construct 0b00100_100 (fromIntegral i .>>. 8) (fromIntegral i) 0
-encode (JUMP (JGT (Imm16 i))) = construct 0b00100_101 (fromIntegral i .>>. 8) (fromIntegral i) 0
-encode (JUMP (JLT (Imm16 i))) = construct 0b00100_110 (fromIntegral i .>>. 8) (fromIntegral i) 0
+encode (JUMP (J (Imm16 i))) = construct 0b00100_000 (fromIntegral (i .>>. 8)) (fromIntegral i) 0
+encode (JUMP (JEQ (Imm16 i))) = construct 0b00100_001 (fromIntegral (i .>>. 8)) (fromIntegral i) 0
+encode (JUMP (JNE (Imm16 i))) = construct 0b00100_010 (fromIntegral (i .>>. 8)) (fromIntegral i) 0
+encode (JUMP (JGE (Imm16 i))) = construct 0b00100_011 (fromIntegral (i .>>. 8)) (fromIntegral i) 0
+encode (JUMP (JLE (Imm16 i))) = construct 0b00100_100 (fromIntegral (i .>>. 8)) (fromIntegral i) 0
+encode (JUMP (JGT (Imm16 i))) = construct 0b00100_101 (fromIntegral (i .>>. 8)) (fromIntegral i) 0
+encode (JUMP (JLT (Imm16 i))) = construct 0b00100_110 (fromIntegral (i .>>. 8)) (fromIntegral i) 0
 encode (JUMP (JR (Sreg s))) = construct 0b00100_111 s 0 0
 encode (TEST (TEST_RR (Sreg s1) (Sreg s2))) = construct 0b00101_000 s1 s2 0
-encode (TEST (TEST_RI (Sreg s1) (Imm16 i))) = construct 0b00101_001 s1 (fromIntegral i .>>. 8) (fromIntegral i)
-encode (TEST (TEST_IR (Imm16 i) (Sreg s1))) = construct 0b00101_010 (fromIntegral i .>>. 8) (fromIntegral i) s1
+encode (TEST (TEST_RI (Sreg s1) (Imm16 i))) = construct 0b00101_001 s1 (fromIntegral (i .>>. 8)) (fromIntegral i)
+encode (TEST (TEST_IR (Imm16 i) (Sreg s1))) = construct 0b00101_010 (fromIntegral (i .>>. 8)) (fromIntegral i) s1
 encode (TEST (SET (Imm8 i))) = construct 0b00101_011 i 0 0
+encode (INOUT (INL (Sreg s))) = construct 0b00110_000 s 0 0
+encode (INOUT (INH (Sreg s))) = construct 0b00110_001 s 0 0
+encode (INOUT (OUTL (Sreg s))) = construct 0b00110_010 s 0 0
+encode (INOUT (OUTH (Sreg s))) = construct 0b00110_011 s 0 0
 
 -- DECODING
 
@@ -396,6 +429,10 @@ decode a b c d = case a of
   0b00101_001 -> TEST (TEST_RI (Sreg b) (Imm16 (pack2 c d)))
   0b00101_010 -> TEST (TEST_IR (Imm16 (pack2 b c)) (Sreg d))
   0b00101_011 -> TEST (SET (Imm8 b))
+  0b00110_000 -> INOUT (INL (Sreg b))
+  0b00110_001 -> INOUT (INH (Sreg b))
+  0b00110_010 -> INOUT (OUTL (Sreg b))
+  0b00110_011 -> INOUT (OUTH (Sreg b))
   _ -> error "Invalid instruction"
   where
     pack2 x y = fromIntegral x .<<. 8 .|. fromIntegral y
