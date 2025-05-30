@@ -110,19 +110,19 @@ if __name__ == "__main__":
       case "00101", "001": flags = get_flags(sregs[arg1] - pack2(arg2, arg3))
       case "00101", "010": flags = get_flags(pack2(arg1, arg2) - sregs[arg3])
       case "00101", "011": flags = arg1 & (SF | ZF)
-      case "00110", "000": sregs[arg1][8:16] = sys.stdin.read(1)
-      case "00110", "001": sregs[arg1][0:8] = sys.stdin.read(1)
+      case "00110", "000": sregs[arg1] = sregs[arg1] & 0xff00 | ord(sys.stdin.read(1))
+      case "00110", "001": sregs[arg1] = sregs[arg1] & 0xff | (ord(sys.stdin.read(1)) << 8)
       case "00110", "010":
-        sys.stdout.buffer.write(bytes([sregs[arg1] & 0xFF]))
+        sys.stdout.buffer.write(chr(sregs[arg1] & 0xFF).encode())
         sys.stdout.flush()
       case "00110", "011":
-        sys.stdout.buffer.write(bytes([sregs[arg1] >> 8]))
+        sys.stdout.buffer.write(chr(sregs[arg1] >> 8).encode())
         sys.stdout.flush()
     pc += 1
 
   print("Sregs:")
   for i in range(6):
-    print(f"s{i:2}: {sregs[i]:4}")
+    print(f"s{i:2}: {sregs[i]:4X}")
   print("Vregs:")
   for i in range(5):
     print(f"v{i:2}: {as_np(vregs[i])}")
