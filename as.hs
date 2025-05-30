@@ -445,7 +445,7 @@ getLabels l = get (foldl go (Map.empty, [], 0) l)
   where
     go (m, acc, count) l
       | null s = (m, "":acc, count)
-      | ':' `elem` s = (Map.insert name count m, "":acc, count)
+      | ':' `elem` s = (Map.insert name (count * 4) m, "":acc, count)
       | otherwise = (m, (s ++ ";"):acc, count + 1)
         where
           s = takeWhile (/= ';') $ dropWhile isSpace l
@@ -472,7 +472,7 @@ main =
           Left err -> print err >> exitFailure
           Right is -> BB.writeFile o (mconcat (map (BB.word32BE . encode) is))
     ["objdump", i] ->
-      BS.readFile i >>= mapM_ (\(i, (a, b, c, d)) -> printf "%8x:\t%08b %02x %02x %02x\t%s\n" i a b c d (show (decode a b c d))) . zip [0 :: Integer ..] . chunk4 . BS.unpack
+      BS.readFile i >>= mapM_ (\(i, (a, b, c, d)) -> printf "%8x:\t%08b %02x %02x %02x\t%s\n" (i*4) a b c d (show (decode a b c d))) . zip [0 :: Integer ..] . chunk4 . BS.unpack
       where
         chunk4 :: [Word8] -> [(Word8, Word8, Word8, Word8)]
         chunk4 [] = []
