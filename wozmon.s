@@ -1,4 +1,7 @@
   mov s10, 0xff00 ; offset of first address
+  mov s30, 0x3e20 ;
+  outh s30 ;
+  outl s30 ;
 INPUT:
 ;; s0 - offset into buffer
 ;; s1 - input byte
@@ -16,6 +19,8 @@ INPUT_LOOP:
   inl s1 ;
   test s1, 0xa ; newline
   jeq GO ; process command
+  test s1, 0x3a ; ':'
+  jeq EDIT ;
   test s1, 0x52 ; 'R'
   jne DONT_R ;
   mov s30, [s10 + 0] ;
@@ -137,6 +142,56 @@ END:
   j 0 ;
 
   mov s30, 0x45 ;
+
+EDIT:
+;; s0 - current address to write to
+;; s1 - nibble idx
+;; s2 - nibble
+;; s3 - word to write
+  mov s0, [s10 + 0] ;
+EDIT_LOOP:
+  mov s1, 0 ;
+  mov s2, 0 ;
+  mov s3, 0 ;
+ECONT:
+  inl s2 ;
+  test s2, 0xa ; newline
+  jeq 0 ;
+  test s2, 0x39 ; '9'
+  jgt EH ;
+  mov s31, 0xffd0 ; -'0'
+  j EW ;
+EH:
+  mov s31, 0xffc9 ; 0xA-'A'
+EW:
+  add s2, s2, s31 ;
+  test s1, 0 ;
+  jeq EW0 ;
+  test s1, 2 ;
+  jlt EW1 ;
+  jeq EW2 ;
+  add s3, s3, s2
+  mov [s0 + 0], s3 ;
+  mov s31, 2 ;
+  add s0, s0, s31 ;
+  j EDIT_LOOP ;
+EW0:
+  mov s30, 0x1000 ;
+  mul s3, s2, s30 ;
+  mov s1, 1 ;
+  j ECONT ;
+EW1:
+  mov s30, 0x100 ;
+  mul s31, s2, s30 ;
+  add s3, s3, s31 ;
+  mov s1, 2 ;
+  j ECONT ;
+EW2:
+  mov s30, 0x10 ;
+  mul s31, s2, s30 ;
+  add s3, s3, s31 ;
+  mov s1, 3 ;
+  j ECONT ;
 DUMB:
   outl s30 ;
   j DUMB ;
