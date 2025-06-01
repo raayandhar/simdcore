@@ -17,6 +17,7 @@ INPUT_CONT:
   mov s3, 0 ; in progress byte value
 INPUT_LOOP:
   inl s1 ;
+  jeq INPUT_LOOP ;
   test s1, 0xa ; newline
   jeq GO ; process command
   test s1, 0x3a ; ':'
@@ -26,9 +27,11 @@ INPUT_LOOP:
   mov s30, [s10 + 0] ;
   jr s30 ;
 DONT_R:
-  test s1, 0x2e ;
+  test s1, 0x2e ; '.'
   jne OK ;
+DOT:
   inl s1 ;
+  jeq DOT ;
 OK:
   test s1, 0x39 ; '9'
   jgt HEX ;
@@ -155,6 +158,7 @@ EDIT_LOOP:
   mov s3, 0 ;
 ECONT:
   inl s2 ;
+  jeq ECONT ;
   test s2, 0xa ; newline
   jeq 0 ;
   test s2, 0x39 ; '9'

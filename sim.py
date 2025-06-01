@@ -1,8 +1,12 @@
-import struct, sys
+import struct, sys, warnings, fcntl, os, time
 import numpy as np
 from os import getenv
-import warnings
+
 warnings.filterwarnings("ignore")
+fcntl.fcntl(0, fcntl.F_SETFL, fcntl.fcntl(0, fcntl.F_GETFL) | os.O_NONBLOCK)
+
+DEBUG = int(getenv("DEBUG", "0")) != 0
+TRACE_FLAGS = int(getenv("TRACE_FLAGS", "0")) != 0
 
 def as_np(arr: bytearray) -> np.ndarray: return np.frombuffer(arr, dtype=np.int16)
 def from_np(arr: np.ndarray) -> bytearray: return arr.tobytes()
@@ -24,7 +28,6 @@ ZF = 0b00000010
 
 FRAC_BITS = 15
 
-DEBUG = int(getenv("DEBUG", "0")) != 0
 
 def get_flags(val: int) -> int:
   val &= 0xFFFF
@@ -47,6 +50,7 @@ if __name__ == "__main__":
   flags = 0
   tracing = [3]
   trace_vals = {}
+  prev_flags = 0
 
   while True:
     try:
@@ -118,8 +122,16 @@ if __name__ == "__main__":
         case "00101", "001": flags = get_flags(sregs[arg1] - pack2(arg2, arg3))
         case "00101", "010": flags = get_flags(pack2(arg1, arg2) - sregs[arg3])
         case "00101", "011": flags = arg1 & (SF | ZF)
-        case "00110", "000": sregs[arg1] = sregs[arg1] & 0xff00 | ord(sys.stdin.read(1))
-        case "00110", "001": sregs[arg1] = sregs[arg1] & 0xff | (ord(sys.stdin.read(1)) << 8)
+        case "00110", "000":
+          if (inp := sys.stdin.read(1)) != '':
+            flags = 0
+            sregs[arg1] = sregs[arg1] & 0xff00 | ord(inp)
+          else: flags = ZF
+        case "00110", "001":
+          if (inp := sys.stdin.read(1)) != '':
+            flags = 0
+            sregs[arg1] = sregs[arg1] & 0xff | (ord(inp) << 8)
+          else: flags = ZF
         case "00110", "010":
           if DEBUG: print(f"OUTPUT: 0x{sregs[arg1] & 0xFF:X}")
           else:
@@ -133,6 +145,9 @@ if __name__ == "__main__":
       pc += 4
       for k in tracing:
         if DEBUG and sregs[k] != trace_vals[k]: print(f"TRACE s{k}: 0x{trace_vals[k]:X} -> 0x{sregs[k]:X}")
+      if TRACE_FLAGS:
+        if flags != prev_flags: print(f"TRACE flags: {'SF ' if prev_flags & SF else ''}{'ZF' if prev_flags & ZF else ''} -> {'SF ' if flags & SF else ''}{'ZF' if flags & ZF else ''}")
+        prev_flags = flags
     except struct.error as e:
       print(f"PC: {pc:x}")
       print("Sregs:")
