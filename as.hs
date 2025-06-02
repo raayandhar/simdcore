@@ -468,7 +468,7 @@ main =
       readFile i >>= \s ->
         let (labels, ls) = getLabels (lines s)
             s' = unlines (map (resolveLabel labels) ls)
-        in case parse (many1 (instr <* symbol ';') <* eof) i s' of
+        in case parse (spaces *> many1 (instr <* symbol ';') <* eof) i s' of
           Left err -> print err >> exitFailure
           Right is -> BB.writeFile o (mconcat (map (BB.word32BE . encode) is))
     ["objdump", i] ->

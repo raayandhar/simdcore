@@ -1,5 +1,8 @@
+;; wozmon.s - a "bootloader" and memory editor
+;; heavily inspired by the original wozmon
+
   mov s10, 0xff00 ; offset of first address
-  mov s30, 0x3e20 ;
+  mov s30, 0x3e20 ; "> "
   outh s30 ;
   outl s30 ;
 INPUT:
@@ -47,7 +50,6 @@ WRITE:
   test s2, 2 ;
   jlt WRITE_1 ;
   jeq WRITE_2 ;
-;; WRITE_3
   add s3, s3, s1 ;
   add s30, s10, s0 ; compute offset
   mov [s30 + 0], s3 ;
