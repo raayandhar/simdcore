@@ -176,7 +176,7 @@ EW:
   cmp s1, 2 ;
   jlt EW1 ;
   jeq EW2 ;
-  add s3, s3, s2
+  add s3, s3, s2 ;
   mov [s0 + 0], s3 ;
   mov s31, 2 ;
   add s0, s0, s31 ;

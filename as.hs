@@ -3,12 +3,16 @@
 
 module Main where
 
+import Control.Monad (unless)
 import Data.Bifunctor (first)
 import Data.Bits
+import Data.Binary.Put (runPut, putWord32be)
 import qualified Data.ByteString as BS
+import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Builder as BB
 import Data.Char (digitToInt, isSpace)
-import Data.List (find, intercalate, isPrefixOf)
+import Data.Functor (($>))
+import Data.List (find, groupBy, intercalate, isPrefixOf)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
 import Data.Text (replace)
@@ -16,7 +20,8 @@ import Data.Word
 import Numeric (showHex)
 import System.Environment (getArgs)
 import System.Exit (exitFailure)
-import Text.Parsec
+import System.IO
+import Text.Parsec (Parsec, ParsecT, Stream, char, choice, count, eof, digit, hexDigit, many, many1, parse, spaces, string, try, (<|>))
 import Text.Printf (printf)
 
 -- TYPES
@@ -86,10 +91,10 @@ data CMP
   | SET Imm8 -- ^set imm8 (sets flags)
 
 data INOUT
-  = INL Sreg -- ^ inl s1; read byte from serial into lower half of s1
-  | INH Sreg -- ^ inh s1; read byte from serial into higher half of s1
-  | OUTL Sreg -- ^ outl s1; write lower half of s1 to serial
-  | OUTH Sreg -- ^ outh s1; write higher half of s1 to serial
+  = INL Sreg -- ^inl s1; read byte from serial into lower half of s1
+  | INH Sreg -- ^inh s1; read byte from serial into higher half of s1
+  | OUTL Sreg -- ^outl s1; write lower half of s1 to serial
+  | OUTH Sreg -- ^outh s1; write higher half of s1 to serial
 
 data Instruction
   = MOV MOV
@@ -99,6 +104,11 @@ data Instruction
   | CMP CMP
   | INOUT INOUT
   | HALT
+
+newtype Directive
+  = ORG Imm16 -- ^org directive, sets current offset
+
+data Line = Instruction Instruction | Directive Directive
 
 #ifdef ANSICOLOR
 instance Show Sreg where show (Sreg s) = "\x1b[32ms" ++ show s ++ "\x1b[0m"
@@ -279,8 +289,8 @@ alu = choice (map try (init ops) ++ [last ops])
         string "or"  *> spaces *> (try (instr3 sreg SOR)  <|> instr3 vreg VOR),
         string "xor" *> spaces *> (try (instr3 sreg SXOR) <|> instr3 vreg VXOR),
         string "not" *> spaces *> (try (instr2 sreg SNOT) <|> instr2 vreg VNOT),
-        string "veq" *> spaces *> (instr3 vreg VEQ),
-        string "vgt" *> spaces *> (instr3 vreg VGT)
+        string "veq" *> spaces *> instr3 vreg VEQ,
+        string "vgt" *> spaces *> instr3 vreg VGT
       ]
     instr2 p c = c <$> p <* symbol ',' <*> p
     instr3 p c = c <$> p <* symbol ',' <*> p <* symbol ',' <*> p
@@ -331,7 +341,10 @@ inout = choice (map try (init opts) ++ [last opts])
 instr :: Parsec String () Instruction
 instr = choice (map try opts)
   where
-    opts = [MOV <$> mov, ALU <$> alu, PERM <$> perm, JUMP <$> jump, CMP <$> cmp, INOUT <$> inout, string "halt" *> pure HALT]
+    opts = [MOV <$> mov, ALU <$> alu, PERM <$> perm, JUMP <$> jump, CMP <$> cmp, INOUT <$> inout, string "halt" $> HALT]
+
+dir :: Parsec String () Directive
+dir = string ".org" *> spaces *> (ORG <$> imm16)
 
 -- ENCODING
 
@@ -389,6 +402,11 @@ encode (INOUT (INH (Sreg s))) = construct 0b00110_001 s 0 0
 encode (INOUT (OUTL (Sreg s))) = construct 0b00110_010 s 0 0
 encode (INOUT (OUTH (Sreg s))) = construct 0b00110_011 s 0 0
 encode HALT = construct 0b00111_000 0 0 0
+
+write :: Handle -> [Line] -> IO ()
+write h [] = return ()
+write h (Instruction i:t) = BL.hPut h (runPut $ putWord32be (encode i)) >> write h t
+write h (Directive (ORG (Imm16 i)):t) = hSeek h AbsoluteSeek (fromIntegral i) >> write h t
 
 -- DECODING
 
@@ -451,15 +469,21 @@ decode a b c d = case a of
 
 -- PREPROCESSING
 
+takeWhileIncluding :: (a -> Bool) -> [a] -> [a]
+takeWhileIncluding _ [] = []
+takeWhileIncluding p (x:xs) =
+  x : if p x then takeWhileIncluding p xs else []
+
 getLabels :: [String] -> (Map String Int, [String])
 getLabels l = get (foldl go (Map.empty, [], 0) l)
   where
     go (m, acc, count) l
       | null s = (m, "":acc, count)
       | ':' `elem` s = (Map.insert name (count * 4) m, "":acc, count)
-      | otherwise = (m, (s ++ ";"):acc, count + 1)
+      | otherwise = (m, s':acc, count + 1)
         where
           s = takeWhile (/= ';') $ dropWhile isSpace l
+          s' = takeWhileIncluding (/= ';') $ dropWhile isSpace l
           name = takeWhile (/= ':') s
     get (a,b,c) = (a, reverse b)
 
@@ -479,14 +503,22 @@ main =
       readFile i >>= \s ->
         let (labels, ls) = getLabels (lines s)
             s' = unlines (map (resolveLabel labels) ls)
-        in case parse (spaces *> many1 (instr <* symbol ';') <* eof) i s' of
+        in case parse (many1 (spaces *> ((Instruction <$> instr <* symbol ';') <|> (Directive <$> dir)) <* spaces) <* eof) i s' of
           Left err -> print err >> exitFailure
-          Right is -> BB.writeFile o (mconcat (map (BB.word32BE . encode) is))
+          Right is -> withBinaryFile o WriteMode $ \h -> write h is
     ["objdump", i] ->
-      BS.readFile i >>= mapM_ (\(i, (a, b, c, d)) -> printf "%8x:\t%08b %02x %02x %02x\t%s\n" (i*4) a b c d (show (decode a b c d))) . zip [0 :: Integer ..] . chunk4 . BS.unpack
+      BS.readFile i >>=
+      mapM_ printRun . groupBy (\(_,d1) (_,d2) -> d1 == d2) . zip [0 :: Integer ..] . chunk4 . BS.unpack
       where
         chunk4 :: [Word8] -> [(Word8, Word8, Word8, Word8)]
         chunk4 [] = []
         chunk4 (a : b : c : d : t) = (a, b, c, d) : chunk4 t
         chunk4 _ = error "Invalid input file"
+        printRun :: [(Integer, (Word8, Word8, Word8, Word8))] -> IO ()
+        printRun ((i, (a, b, c, d)):t) = do
+          printf "%8x:\t%08b %02x %02x %02x\t%s\n" i a b c d (show (decode a b c d))
+          unless (null t) $
+            printf "\t\t...\n%8x:\t%08b %02x %02x %02x\t%s\n" ti ta tb tc td (show (decode ta tb tc td))
+          where
+            (ti, (ta, tb, tc, td)) = last t
     _ -> usage
