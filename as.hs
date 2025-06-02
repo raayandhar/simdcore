@@ -10,18 +10,22 @@ import Data.Binary.Put (runPut, putWord32be)
 import qualified Data.ByteString as BS
 import qualified Data.ByteString.Lazy as BL
 import qualified Data.ByteString.Builder as BB
-import Data.Char (digitToInt, isSpace)
+import Data.Char (digitToInt, isSpace, ord)
 import Data.Functor (($>))
 import Data.List (find, groupBy, intercalate, isPrefixOf)
 import Data.Map.Strict (Map)
 import qualified Data.Map.Strict as Map
+import Data.String (fromString)
 import Data.Text (replace)
 import Data.Word
 import Numeric (showHex)
 import System.Environment (getArgs)
 import System.Exit (exitFailure)
 import System.IO
-import Text.Parsec (Parsec, ParsecT, Stream, char, choice, count, eof, digit, hexDigit, many, many1, parse, spaces, string, try, (<|>))
+import Text.Parsec
+  (Parsec, ParsecT, Stream, char, choice, count, eof, digit, hexDigit, many, many1, noneOf, parse, spaces, string, try, (<|>))
+import qualified Text.Parsec.Token as Tok
+import Text.Parsec.Language (haskellDef)
 import Text.Printf (printf)
 
 -- TYPES
@@ -104,9 +108,11 @@ data Instruction
   | CMP CMP
   | INOUT INOUT
   | HALT
+  | BAD
 
-newtype Directive
+data Directive
   = ORG Imm16 -- ^org directive, sets current offset
+  | DB String -- ^db directive, defines a series of bytes (must be divisible by 4)
 
 data Line = Instruction Instruction | Directive Directive
 
@@ -232,6 +238,7 @@ instance Show Instruction where
 #else
     "halt"
 #endif
+  show BAD = "bad"
 
 -- PARSING
 
@@ -343,8 +350,16 @@ instr = choice (map try opts)
   where
     opts = [MOV <$> mov, ALU <$> alu, PERM <$> perm, JUMP <$> jump, CMP <$> cmp, INOUT <$> inout, string "halt" $> HALT]
 
+stringLiteral :: Parsec String () String
+stringLiteral = Tok.stringLiteral (Tok.makeTokenParser haskellDef)
+
 dir :: Parsec String () Directive
-dir = string ".org" *> spaces *> (ORG <$> imm16)
+dir = choice (map try opts)
+  where
+    opts =
+      [ string ".org" *> spaces *> (ORG <$> imm16),
+        string ".db" *> spaces *> (DB <$> stringLiteral)
+      ]
 
 -- ENCODING
 
@@ -407,6 +422,14 @@ write :: Handle -> [Line] -> IO ()
 write h [] = return ()
 write h (Instruction i:t) = BL.hPut h (runPut $ putWord32be (encode i)) >> write h t
 write h (Directive (ORG (Imm16 i)):t) = hSeek h AbsoluteSeek (fromIntegral i) >> write h t
+write h (Directive (DB s):t) =
+  let bytes = pad s
+  in BL.hPut h bytes >> write h t
+  where
+    pad :: String -> BL.ByteString
+    pad bs =
+      let padding = (4 - (length bs `mod` 4)) `mod` 4
+      in fromString bs <> BL.replicate (fromIntegral padding) 0
 
 -- DECODING
 
@@ -462,7 +485,7 @@ decode a b c d = case a of
   0b00110_010 -> INOUT (OUTL (Sreg b))
   0b00110_011 -> INOUT (OUTH (Sreg b))
   0b00111_000 -> HALT
-  _ -> error "Invalid instruction"
+  _ -> BAD
   where
     pack2 x y = fromIntegral x .<<. 8 .|. fromIntegral y
     pack3 x y z = fromIntegral x .<<. 16 .|. fromIntegral y .<<. 8 .|. fromIntegral z
@@ -479,8 +502,13 @@ getLabels l = get (foldl go (Map.empty, [], 0) l)
   where
     go (m, acc, count) l
       | null s = (m, "":acc, count)
-      | ':' `elem` s = (Map.insert name (count * 4) m, "":acc, count)
-      | otherwise = (m, s':acc, count + 1)
+      | '.' `elem` s =
+        case parse (spaces *> dir) "" s of
+          Right (ORG (Imm16 i)) -> (m, s':acc, fromIntegral i)
+          Right (DB content) -> (m, s':acc, count + ((length content + 3) `div` 4) * 4)
+          _ -> (m, s':acc, count)
+      | ':' `elem` s = (Map.insert name count m, "":acc, count)
+      | otherwise = (m, s':acc, count + 4)
         where
           s = takeWhile (/= ';') $ dropWhile isSpace l
           s' = takeWhileIncluding (/= ';') $ dropWhile isSpace l
