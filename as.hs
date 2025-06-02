@@ -79,10 +79,10 @@ data JUMP
   | JLT Imm16 -- ^jump if less
   | JR Sreg -- ^jump to scalar register
 
-data TEST
-  = TEST_RR Sreg Sreg -- ^test s1, s2
-  | TEST_RI Sreg Imm16 -- ^test s1, imm16
-  | TEST_IR Imm16 Sreg -- ^test imm16, s1
+data CMP
+  = CMP_RR Sreg Sreg -- ^cmp s1, s2
+  | CMP_RI Sreg Imm16 -- ^cmp s1, imm16
+  | CMP_IR Imm16 Sreg -- ^cmp imm16, s1
   | SET Imm8 -- ^set imm8 (sets flags)
 
 data INOUT
@@ -96,7 +96,7 @@ data Instruction
   | ALU ALU
   | PERM PERM
   | JUMP JUMP
-  | TEST TEST
+  | CMP CMP
   | INOUT INOUT
 
 #ifdef ANSICOLOR
@@ -186,15 +186,15 @@ instance Show JUMP where
     JLT i -> "jlt " ++ show i
     JR s -> "jr " ++ show s
 
-instance Show TEST where
+instance Show CMP where
 #ifdef ANSICOLOR
   show t = "\x1b[33m" ++ case t of
 #else
   show t = case t of
 #endif
-    TEST_RR s1 s2 -> "test " ++ show s1 ++ ", " ++ show s2
-    TEST_RI s1 i -> "test " ++ show s1 ++ ", " ++ show i
-    TEST_IR i s1 -> "test " ++ show i ++ ", " ++ show s1
+    CMP_RR s1 s2 -> "cmp " ++ show s1 ++ ", " ++ show s2
+    CMP_RI s1 i -> "cmp " ++ show s1 ++ ", " ++ show i
+    CMP_IR i s1 -> "cmp " ++ show i ++ ", " ++ show s1
     SET i -> "set " ++ show i
 
 instance Show INOUT where
@@ -213,7 +213,7 @@ instance Show Instruction where
   show (ALU a) = show a
   show (PERM p) = show p
   show (JUMP j) = show j
-  show (TEST t) = show t
+  show (CMP t) = show t
   show (INOUT i) = show i
 
 -- PARSING
@@ -301,14 +301,14 @@ jump = choice (map try (init opts) ++ [last opts])
         string "j" *> spaces *> (J <$> imm16)
       ]
 
-test :: Parsec String () TEST
-test = test' <|> (string "set" *> spaces *> (SET <$> imm8))
+cmp :: Parsec String () CMP
+cmp = cmp' <|> (string "set" *> spaces *> (SET <$> imm8))
   where
-    test' = string "test"
+    cmp' = string "cmp"
       *> spaces
-      *> ( try (TEST_RR <$> sreg <* symbol ',' <*> sreg)
-             <|> try (TEST_RI <$> sreg <* symbol ',' <*> imm16)
-             <|> try (TEST_IR <$> imm16 <* symbol ',' <*> sreg)
+      *> ( try (CMP_RR <$> sreg <* symbol ',' <*> sreg)
+             <|> try (CMP_RI <$> sreg <* symbol ',' <*> imm16)
+             <|> try (CMP_IR <$> imm16 <* symbol ',' <*> sreg)
          )
 
 inout :: Parsec String () INOUT
@@ -322,7 +322,9 @@ inout = choice (map try (init opts) ++ [last opts])
       ]
 
 instr :: Parsec String () Instruction
-instr = try (MOV <$> mov) <|> try (ALU <$> alu) <|> try (PERM <$> perm) <|> try (JUMP <$> jump) <|> try (TEST <$> test) <|> try (INOUT <$> inout)
+instr = choice (map try opts)
+  where
+    opts = [MOV <$> mov, ALU <$> alu, PERM <$> perm, JUMP <$> jump, CMP <$> cmp, INOUT <$> inout]
 
 -- ENCODING
 
@@ -371,10 +373,10 @@ encode (JUMP (JLE (Imm16 i))) = construct 0b00100_100 (fromIntegral (i .>>. 8)) 
 encode (JUMP (JGT (Imm16 i))) = construct 0b00100_101 (fromIntegral (i .>>. 8)) (fromIntegral i) 0
 encode (JUMP (JLT (Imm16 i))) = construct 0b00100_110 (fromIntegral (i .>>. 8)) (fromIntegral i) 0
 encode (JUMP (JR (Sreg s))) = construct 0b00100_111 s 0 0
-encode (TEST (TEST_RR (Sreg s1) (Sreg s2))) = construct 0b00101_000 s1 s2 0
-encode (TEST (TEST_RI (Sreg s1) (Imm16 i))) = construct 0b00101_001 s1 (fromIntegral (i .>>. 8)) (fromIntegral i)
-encode (TEST (TEST_IR (Imm16 i) (Sreg s1))) = construct 0b00101_010 (fromIntegral (i .>>. 8)) (fromIntegral i) s1
-encode (TEST (SET (Imm8 i))) = construct 0b00101_011 i 0 0
+encode (CMP (CMP_RR (Sreg s1) (Sreg s2))) = construct 0b00101_000 s1 s2 0
+encode (CMP (CMP_RI (Sreg s1) (Imm16 i))) = construct 0b00101_001 s1 (fromIntegral (i .>>. 8)) (fromIntegral i)
+encode (CMP (CMP_IR (Imm16 i) (Sreg s1))) = construct 0b00101_010 (fromIntegral (i .>>. 8)) (fromIntegral i) s1
+encode (CMP (SET (Imm8 i))) = construct 0b00101_011 i 0 0
 encode (INOUT (INL (Sreg s))) = construct 0b00110_000 s 0 0
 encode (INOUT (INH (Sreg s))) = construct 0b00110_001 s 0 0
 encode (INOUT (OUTL (Sreg s))) = construct 0b00110_010 s 0 0
@@ -425,10 +427,10 @@ decode a b c d = case a of
   0b00100_101 -> JUMP (JGT (Imm16 (pack2 b c)))
   0b00100_110 -> JUMP (JLT (Imm16 (pack2 b c)))
   0b00100_111 -> JUMP (JR (Sreg b))
-  0b00101_000 -> TEST (TEST_RR (Sreg b) (Sreg c))
-  0b00101_001 -> TEST (TEST_RI (Sreg b) (Imm16 (pack2 c d)))
-  0b00101_010 -> TEST (TEST_IR (Imm16 (pack2 b c)) (Sreg d))
-  0b00101_011 -> TEST (SET (Imm8 b))
+  0b00101_000 -> CMP (CMP_RR (Sreg b) (Sreg c))
+  0b00101_001 -> CMP (CMP_RI (Sreg b) (Imm16 (pack2 c d)))
+  0b00101_010 -> CMP (CMP_IR (Imm16 (pack2 b c)) (Sreg d))
+  0b00101_011 -> CMP (SET (Imm8 b))
   0b00110_000 -> INOUT (INL (Sreg b))
   0b00110_001 -> INOUT (INH (Sreg b))
   0b00110_010 -> INOUT (OUTL (Sreg b))

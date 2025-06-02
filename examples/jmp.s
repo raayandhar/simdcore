@@ -6,10 +6,10 @@
   mov s4, 1 ;
 
 LOOP:
-  test s0, s1 ; cmp s0 - s1 
+  cmp s0, s1 ; cmp s0 - s1
   jge END ; if s0 >= s1, jump to END 
 
-  test s0, s2 ; cmp s0 - s1
+  cmp s0, s2 ; cmp s0 - s1
   jne SKIP ; if s0 != s2, jump to SKIP
 
   mov s3, 100 ; only executed when s0 == s2

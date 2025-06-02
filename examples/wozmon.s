@@ -21,22 +21,22 @@ INPUT_CONT:
 INPUT_LOOP:
   inl s1 ;
   jeq INPUT_LOOP ;
-  test s1, 0xa ; newline
+  cmp s1, 0xa ; newline
   jeq GO ; process command
-  test s1, 0x3a ; ':'
+  cmp s1, 0x3a ; ':'
   jeq EDIT ;
-  test s1, 0x52 ; 'R'
+  cmp s1, 0x52 ; 'R'
   jne DONT_R ;
   mov s30, [s10 + 0] ;
   jr s30 ;
 DONT_R:
-  test s1, 0x2e ; '.'
+  cmp s1, 0x2e ; '.'
   jne OK ;
 DOT:
   inl s1 ;
   jeq DOT ;
 OK:
-  test s1, 0x39 ; '9'
+  cmp s1, 0x39 ; '9'
   jgt HEX ;
   mov s30, 0xffd0 ; -'0'
   add s1, s1, s30 ;
@@ -45,9 +45,9 @@ HEX:
   mov s30, 0xffc9 ; -'A'
   add s1, s1, s30 ;
 WRITE:
-  test s2, 0 ;
+  cmp s2, 0 ;
   jeq WRITE_0 ;
-  test s2, 2 ;
+  cmp s2, 2 ;
   jlt WRITE_1 ;
   jeq WRITE_2 ;
   add s3, s3, s1 ;
@@ -83,12 +83,12 @@ GO:
 PRINT:
   mov s20, 0 ; nibble index
 GO_LOOP:
-  test s20, 0 ;
+  cmp s20, 0 ;
   jeq O0 ;
-  test s20, 2 ;
+  cmp s20, 2 ;
   jlt O1 ;
   jeq O2 ;
-  test s20, 4 ;
+  cmp s20, 4 ;
   jeq PRINT_DONE ;
   mov s31, s0 ;
   j O ;
@@ -107,7 +107,7 @@ O2:
 O:
   mov s30, 0xF ;
   and s31, s31, s30 ;
-  test s31, 0x9 ;
+  cmp s31, 0x9 ;
   jgt WALPH ;
   mov s30, 0x30 ; '0'
   j W ;
@@ -120,7 +120,7 @@ W:
   add s20, s20, s30 ;
   j GO_LOOP ;
 PRINT_DONE:
-  test s1, 0 ;
+  cmp s1, 0 ;
   jne DEREF ;
   mov s30, 0x3a20 ; ": "
   outh s30 ;
@@ -131,9 +131,9 @@ PRINT_DONE:
   j PRINT ;
 DEREF:
   mov s30, [s10 + 2] ;
-  test s30, 0 ; if dst is null, we don't print a range
+  cmp s30, 0 ; if dst is null, we don't print a range
   jeq END ;
-  test s2, s30 ;
+  cmp s2, s30 ;
   jge END ;
   mov s31, 2 ;
   add s2, s2, s31 ;
@@ -161,9 +161,9 @@ EDIT_LOOP:
 ECONT:
   inl s2 ;
   jeq ECONT ;
-  test s2, 0xa ; newline
+  cmp s2, 0xa ; newline
   jeq 0 ;
-  test s2, 0x39 ; '9'
+  cmp s2, 0x39 ; '9'
   jgt EH ;
   mov s31, 0xffd0 ; -'0'
   j EW ;
@@ -171,9 +171,9 @@ EH:
   mov s31, 0xffc9 ; 0xA-'A'
 EW:
   add s2, s2, s31 ;
-  test s1, 0 ;
+  cmp s1, 0 ;
   jeq EW0 ;
-  test s1, 2 ;
+  cmp s1, 2 ;
   jlt EW1 ;
   jeq EW2 ;
   add s3, s3, s2
