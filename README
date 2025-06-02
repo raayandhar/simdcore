@@ -1,9 +1,3 @@
-assembler: ghc --make as.hs -o simd -optP-DANSICOLOR
-
-Data width: 128 bits
-Instruction width: 
- - opcode: 5 bits
- - addressing mode specifiers: 3 bits
- - arguments (3):
-   - registers: 8 bits
-   - constants: 8 bits
+assembler: make simd
+simulator: make sim
+examples: make examples
