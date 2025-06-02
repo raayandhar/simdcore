@@ -516,9 +516,9 @@ main =
         chunk4 _ = error "Invalid input file"
         printRun :: [(Integer, (Word8, Word8, Word8, Word8))] -> IO ()
         printRun ((i, (a, b, c, d)):t) = do
-          printf "%8x:\t%08b %02x %02x %02x\t%s\n" i a b c d (show (decode a b c d))
+          printf "%8x:\t%08b %02x %02x %02x\t%s\n" (i * 4) a b c d (show (decode a b c d))
           unless (null t) $
-            printf "\t\t...\n%8x:\t%08b %02x %02x %02x\t%s\n" ti ta tb tc td (show (decode ta tb tc td))
+            printf "\t\t...\n%8x:\t%08b %02x %02x %02x\t%s\n" (ti * 4) ta tb tc td (show (decode ta tb tc td))
           where
             (ti, (ta, tb, tc, td)) = last t
     _ -> usage
