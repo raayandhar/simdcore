@@ -6,6 +6,7 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 #include <string.h>
+#include <signal.h>
 
 #define ZF 0x01
 #define SF 0x02
@@ -23,6 +24,7 @@ typedef uint16_t vreg_t[8];
 
 __attribute__((aligned(4096))) uint8_t memory[65536] = {0};
 uint8_t flags = 0;
+uint16_t pc = 0;
 uint16_t sregs[256] = {0};
 vreg_t vregs[256] = {0};
 
@@ -47,9 +49,21 @@ void out(uint8_t out) {
   }
 }
 
+void dump() {
+  fprintf(stderr, "PC: %04x\n", pc);
+  for (int i = 0; i < 16; i++) fprintf(stderr, "s%d: 0x%04x\n", i, sregs[i]);
+  for (int i = 0; i < 4; i++)
+    fprintf(stderr, "v%d: %04x %04x %04x %04x %04x %04x %04x %04x\n",
+        i, vregs[i][0], vregs[i][1], vregs[i][2], vregs[i][3], vregs[i][4], vregs[i][5], vregs[i][6], vregs[i][7]);
+  for (int i = 0x1000; i < 0x1040; i += 0x10)
+    fprintf(stderr, "%04x: %02x%02x %02x%02x %02x%02x %02x%02x\n",
+        i, memory[i], memory[i + 1], memory[i + 2], memory[i + 3], memory[i + 4], memory[i + 5], memory[i + 6], memory[i + 7]);
+
+  exit(0);
+}
+
 void execute() {
   fprintf(stderr, "Starting execution...\n");
-  uint16_t pc = 0;
 
   while (1) {
     struct instruction inst = *((struct instruction *)(&memory[pc]));
@@ -65,8 +79,15 @@ void execute() {
             break;
           case 3: sregs[inst.A] = inst.B << 8 | inst.C; break;
           case 4: memcpy(&vregs[inst.A], &vregs[inst.B], sizeof(vreg_t)); break;
-          case 5: memcpy(&vregs[inst.A], &memory[sregs[inst.B] + inst.C], sizeof(vreg_t)); break;
-          case 6: memcpy(&memory[sregs[inst.A] + inst.B], &vregs[inst.C], sizeof(vreg_t)); break;
+          case 5:
+            for (int i = 0; i < 8; i++) vregs[inst.A][i] = memory[sregs[inst.B] + inst.C + i * 2] << 8 | memory[sregs[inst.B] + inst.C + i * 2 + 1];
+            break;
+          case 6:
+            for (int i = 0; i < 8; i++) {
+              memory[sregs[inst.A] + inst.B + i * 2] = vregs[inst.C][i] >> 8;
+              memory[sregs[inst.A] + inst.B + i * 2 + 1] = vregs[inst.C][i] & 0xFF;
+            }
+            break;
           case 7:
             for (int i = 0; i < 8; i++)
               if (inst.C & (1 << i)) vregs[inst.A][i] = sregs[inst.B];
@@ -187,9 +208,12 @@ int main(int argc, char **argv) {
   // add HLT (0x07) instruction at the end of the memory
   memcpy(&memory[sb.st_size], &(struct instruction){0, 0x07, 0, 0, 0}, sizeof(struct instruction));
 
+  signal(SIGINT, dump);
+
   execute();
 
   fprintf(stderr, "Execution finished.\n");
+  dump();
 
   return 0;
 }
