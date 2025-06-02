@@ -1,3 +1,4 @@
 assembler: make simd
+linker: make ld
 simulator: make sim
 examples: make examples
