@@ -11,7 +11,7 @@
 #define SF 0x02
 #define FLAG(x) (((x) == 0) ? ZF : 0) | ((x) & 0x8000 ? SF : 0)
 
-struct __attribute__((packed)) instruction {
+struct instruction {
   uint8_t aluctrl:3;
   uint8_t opcode:5;
   uint8_t A;
@@ -19,9 +19,12 @@ struct __attribute__((packed)) instruction {
   uint8_t C;
 };
 
+typedef uint16_t vreg_t[8];
+
 __attribute__((aligned(4096))) uint8_t memory[65536] = {0};
 uint8_t flags = 0;
 uint16_t sregs[256] = {0};
+vreg_t vregs[256] = {0};
 
 uint8_t in() {
   uint8_t in;
@@ -33,6 +36,7 @@ uint8_t in() {
     flags = ZF;
     return 0;
   }
+  flags = 0;
   return in;
 }
 
@@ -49,18 +53,24 @@ void execute() {
 
   while (1) {
     struct instruction inst = *((struct instruction *)(&memory[pc]));
-
+    pc += 4;
     switch(inst.opcode) {
       case 0x00: // MOV
         switch (inst.aluctrl) {
           case 0: sregs[inst.A] = sregs[inst.B]; break;
-          case 1: sregs[inst.A] = memory[sregs[inst.B] + inst.C]; break;
-          case 2: memory[sregs[inst.A] + inst.B] = sregs[inst.C]; break;
+          case 1: sregs[inst.A] = memory[sregs[inst.B] + inst.C] << 8 | memory[sregs[inst.B] + inst.C + 1]; break;
+          case 2:
+            memory[sregs[inst.A] + inst.B] = sregs[inst.C] >> 8;
+            memory[sregs[inst.A] + inst.B + 1] = sregs[inst.C] & 0xFF;
+            break;
           case 3: sregs[inst.A] = inst.B << 8 | inst.C; break;
-          case 4:
-          case 5:
-          case 6:
-          case 7: fprintf(stderr, "vector registers unimplemented\n"); exit(1);
+          case 4: memcpy(&vregs[inst.A], &vregs[inst.B], sizeof(vreg_t)); break;
+          case 5: memcpy(&vregs[inst.A], &memory[sregs[inst.B] + inst.C], sizeof(vreg_t)); break;
+          case 6: memcpy(&memory[sregs[inst.A] + inst.B], &vregs[inst.C], sizeof(vreg_t)); break;
+          case 7:
+            for (int i = 0; i < 8; i++)
+              if (inst.C & (1 << i)) vregs[inst.A][i] = sregs[inst.B];
+            break;
         } break;
       case 0x01: // SCALAR ALU
         switch (inst.aluctrl) {
@@ -74,8 +84,42 @@ void execute() {
           case 7: sregs[inst.A] = ~sregs[inst.B]; break;
         } break;
       case 0x02: // VECTOR ALU
+        switch (inst.aluctrl) {
+          case 0:
+            for (int i = 0; i < 8; i++) vregs[inst.A][i] = vregs[inst.B][i] + vregs[inst.C][i];
+            break;
+          case 1:
+            for (int i = 0; i < 8; i++) vregs[inst.A][i] = vregs[inst.B][i] * vregs[inst.C][i];
+            break;
+          case 2:
+            for (int i = 0; i < 8; i++) vregs[inst.A][i] = -vregs[inst.B][i];
+            break;
+          case 3:
+            for (int i = 0; i < 8; i++) vregs[inst.A][i] = vregs[inst.B][i] / vregs[inst.C][i];
+            break;
+          case 4:
+            for (int i = 0; i < 8; i++) vregs[inst.A][i] = vregs[inst.B][i] & vregs[inst.C][i];
+            break;
+          case 5:
+            for (int i = 0; i < 8; i++) vregs[inst.A][i] = vregs[inst.B][i] | vregs[inst.C][i];
+            break;
+          case 6:
+            for (int i = 0; i < 8; i++) vregs[inst.A][i] = vregs[inst.B][i] ^ vregs[inst.C][i];
+            break;
+          case 7:
+            for (int i = 0; i < 8; i++) vregs[inst.A][i] = ~vregs[inst.B][i];
+            break;
+        } break;
       case 0x03: // VECTOR COMPARE
-        fprintf(stderr, "vector ALU unimplemented\n"); exit(1);
+        switch (inst.aluctrl) {
+          case 0:
+            for (int i = 0; i < 8; i++) vregs[inst.A][i] = (vregs[inst.B][i] == vregs[inst.C][i]) ? 0xFFFF : 0;
+            break;
+          case 1:
+            for (int i = 0; i < 8; i++) vregs[inst.A][i] = (vregs[inst.B][i] > vregs[inst.C][i]) ? 0xFFFF : 0;
+            break;
+          default: fprintf(stderr, "unknown vector compare instruction\n"); exit(1);
+        } break;
       case 0x04: // JUMP
         switch (inst.aluctrl) {
           case 0: pc = inst.A << 8 | inst.B; continue;
@@ -91,7 +135,7 @@ void execute() {
         switch (inst.aluctrl) {
           case 0: flags = FLAG(sregs[inst.A] - sregs[inst.B]); break;
           case 1: flags = FLAG(sregs[inst.A] - (inst.B << 8 | inst.C)); break;
-          case 2: fprintf(stderr, "test_ir unimplemented\n"); exit(1);
+          case 2: flags = FLAG((inst.A << 8 | inst.B) - sregs[inst.C]); break;
           case 3: flags = inst.A & (ZF | SF);
           default: fprintf(stderr, "unknown test instruction\n"); exit(1);
         } break;
@@ -106,7 +150,6 @@ void execute() {
       case 0x07: return;
       default: fprintf(stderr, "unknown opcode 0x%02x\n", inst.opcode); exit(1);
     }
-    pc += 4;
   }
 }
 
