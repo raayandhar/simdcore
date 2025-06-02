@@ -98,6 +98,7 @@ data Instruction
   | JUMP JUMP
   | CMP CMP
   | INOUT INOUT
+  | HALT
 
 #ifdef ANSICOLOR
 instance Show Sreg where show (Sreg s) = "\x1b[32ms" ++ show s ++ "\x1b[0m"
@@ -215,6 +216,12 @@ instance Show Instruction where
   show (JUMP j) = show j
   show (CMP t) = show t
   show (INOUT i) = show i
+  show HALT =
+#ifdef ANSICOLOR
+    "\x1b[33mhalt\x1b[0m"
+#else
+    "halt"
+#endif
 
 -- PARSING
 
@@ -324,7 +331,7 @@ inout = choice (map try (init opts) ++ [last opts])
 instr :: Parsec String () Instruction
 instr = choice (map try opts)
   where
-    opts = [MOV <$> mov, ALU <$> alu, PERM <$> perm, JUMP <$> jump, CMP <$> cmp, INOUT <$> inout]
+    opts = [MOV <$> mov, ALU <$> alu, PERM <$> perm, JUMP <$> jump, CMP <$> cmp, INOUT <$> inout, string "halt" *> pure HALT]
 
 -- ENCODING
 
@@ -381,6 +388,7 @@ encode (INOUT (INL (Sreg s))) = construct 0b00110_000 s 0 0
 encode (INOUT (INH (Sreg s))) = construct 0b00110_001 s 0 0
 encode (INOUT (OUTL (Sreg s))) = construct 0b00110_010 s 0 0
 encode (INOUT (OUTH (Sreg s))) = construct 0b00110_011 s 0 0
+encode HALT = construct 0b00111_000 0 0 0
 
 -- DECODING
 
@@ -435,6 +443,7 @@ decode a b c d = case a of
   0b00110_001 -> INOUT (INH (Sreg b))
   0b00110_010 -> INOUT (OUTL (Sreg b))
   0b00110_011 -> INOUT (OUTH (Sreg b))
+  0b00111_000 -> HALT
   _ -> error "Invalid instruction"
   where
     pack2 x y = fromIntegral x .<<. 8 .|. fromIntegral y
