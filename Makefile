@@ -3,7 +3,10 @@
 EXAMPLES := $(wildcard examples/*.s)
 EXAMPLE_BINS := $(EXAMPLES:.s=.bin)
 
-all: simd ld sim examples
+DEMO_SRCS := $(wildcard demo/*.s)
+DEMO_BINS := $(DEMO_SRCS:.s=.bin)
+
+all: simd ld sim examples demo.bin
 
 simd: as.hs
 	ghc --make as.hs -o simd -optP-DANSICOLOR
@@ -17,6 +20,12 @@ sim: sim.c
 examples: $(EXAMPLE_BINS)
 
 examples/%.bin: examples/%.s simd
+	./simd as $< $@
+
+demo.bin :$(DEMO_BINS) ld
+	./ld $(DEMO_BINS) > $@
+
+demo/%.bin: demo/%.s simd
 	./simd as $< $@
 
 clean:
