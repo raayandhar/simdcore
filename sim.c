@@ -136,7 +136,7 @@ void execute() {
           case 0: flags = FLAG(sregs[inst.A] - sregs[inst.B]); break;
           case 1: flags = FLAG(sregs[inst.A] - (inst.B << 8 | inst.C)); break;
           case 2: flags = FLAG((inst.A << 8 | inst.B) - sregs[inst.C]); break;
-          case 3: flags = inst.A & (ZF | SF);
+          case 3: flags = inst.A & (ZF | SF); break;
           default: fprintf(stderr, "unknown test instruction\n"); exit(1);
         } break;
       case 0x06: // IO
