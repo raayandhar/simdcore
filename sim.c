@@ -139,7 +139,7 @@ void execute() {
           case 1:
             for (int i = 0; i < 8; i++) vregs[inst.A][i] = (vregs[inst.B][i] > vregs[inst.C][i]) ? 0xFFFF : 0;
             break;
-          default: fprintf(stderr, "unknown vector compare instruction\n"); exit(1);
+          default: fprintf(stderr, "unknown vector compare instruction\n"); dump();
         } break;
       case 0x04: // JUMP
         switch (inst.aluctrl) {
@@ -158,7 +158,7 @@ void execute() {
           case 1: flags = FLAG(sregs[inst.A] - (inst.B << 8 | inst.C)); break;
           case 2: flags = FLAG((inst.A << 8 | inst.B) - sregs[inst.C]); break;
           case 3: flags = inst.A & (ZF | SF); break;
-          default: fprintf(stderr, "unknown test instruction\n"); exit(1);
+          default: fprintf(stderr, "unknown test instruction\n"); dump();
         } break;
       case 0x06: // IO
         switch (inst.aluctrl) {
@@ -166,10 +166,10 @@ void execute() {
           case 1: sregs[inst.A] = (sregs[inst.A] & 0x00FF) | (in() << 8); break;
           case 2: out(sregs[inst.A] & 0xFF); break;
           case 3: out(sregs[inst.A] >> 8); break;
-          default: fprintf(stderr, "unknown IO instruction\n"); exit(1);
+          default: fprintf(stderr, "unknown IO instruction\n"); dump();
         } break;
       case 0x07: return;
-      default: fprintf(stderr, "unknown opcode 0x%02x\n", inst.opcode); exit(1);
+      default: fprintf(stderr, "unknown opcode 0x%02x\n", inst.opcode); dump();
     }
   }
 }
