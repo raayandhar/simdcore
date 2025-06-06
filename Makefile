@@ -1,4 +1,4 @@
-.PHONY: all clean examples
+.PHONY: all clean examples b
 
 EXAMPLES := $(wildcard examples/*.s)
 EXAMPLE_BINS := $(EXAMPLES:.s=.bin)
@@ -6,13 +6,16 @@ EXAMPLE_BINS := $(EXAMPLES:.s=.bin)
 DEMO_SRCS := $(wildcard demo/*.s)
 DEMO_BINS := $(DEMO_SRCS:.s=.bin)
 
-all: simd ld sim examples demo.bin
+all: simd ld b sim examples demo.bin
 
 simd: as.hs
 	ghc --make as.hs -o simd -optP-DANSICOLOR
 
 ld: ld.c
 	$(CC) -o ld ld.c -Wall -Wextra
+
+b:
+	$(MAKE) -C b
 
 sim: sim.c
 	$(CC) -o sim sim.c -Wall -Wextra
@@ -30,4 +33,5 @@ demo/%.bin: demo/%.s simd
 
 clean:
 	rm -f simd ld as.hi as.o sim examples/*.bin
+	$(MAKE) -C b clean
 
