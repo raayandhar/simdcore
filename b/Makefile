@@ -1,8 +1,8 @@
 .PHONY: clean
 
 SRCS := $(wildcard *.c)
-DEPS := $(SRCS:.c=.d)
 OBJS := $(SRCS:.c=.o) stb_c_lexer.o
+DEPS := $(OBJS:.o=.d)
 
 CFLAGS := -Wall -Wextra -Werror -std=c99 -MMD -MP -D_POSIX_C_SOURCE=200809L
 
