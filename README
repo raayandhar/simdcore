@@ -2,3 +2,5 @@ assembler: make simd
 linker: make ld
 simulator: make sim
 examples: make examples
+
+Read our report for more details on design and implementation.
